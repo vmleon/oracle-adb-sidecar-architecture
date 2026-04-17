@@ -1,0 +1,59 @@
+---
+- name: Install JDK 23
+  ansible.builtin.package:
+    name: jdk-23
+    update_cache: yes
+
+- name: Create back config directory
+  ansible.builtin.file:
+    path: "{{ back_dest_directory }}/config"
+    state: directory
+    owner: opc
+    group: opc
+    mode: '0744'
+
+- name: Copy jar file
+  ansible.builtin.copy:
+    src: "files/{{ back_jar_file }}"
+    dest: "{{ back_dest_directory }}/{{ back_jar_file }}"
+    owner: opc
+    group: opc
+    mode: '0640'
+
+- name: Render application.yaml
+  ansible.builtin.template:
+    src: files/application.yaml.j2
+    dest: "{{ back_dest_directory }}/config/application.yaml"
+    owner: opc
+    group: opc
+    mode: '0640'
+
+- name: Render back systemd unit
+  ansible.builtin.template:
+    src: files/back.service.j2
+    dest: /etc/systemd/system/back.service
+    mode: '0644'
+
+- name: Render run script
+  ansible.builtin.template:
+    src: files/run.sh.j2
+    dest: "{{ back_dest_directory }}/run.sh"
+    owner: opc
+    group: opc
+    mode: '0744'
+
+- name: Reload systemd daemon
+  ansible.builtin.systemd:
+    daemon_reload: yes
+
+- name: Start back service
+  ansible.builtin.systemd:
+    name: back
+    state: started
+    enabled: yes
+
+- name: Stop firewalld
+  ansible.builtin.service:
+    name: firewalld
+    state: stopped
+    enabled: no

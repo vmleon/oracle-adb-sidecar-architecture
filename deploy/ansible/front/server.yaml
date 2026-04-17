@@ -1,0 +1,5 @@
+- name: Front
+  hosts: front
+  become: true
+  roles:
+    - app

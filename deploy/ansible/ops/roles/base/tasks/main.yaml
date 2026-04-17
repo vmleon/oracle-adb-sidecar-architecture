@@ -1,0 +1,11 @@
+---
+- name: Install jump-host tools
+  ansible.builtin.dnf:
+    name:
+      - vim
+      - git
+      - curl
+      - jq
+      - tmux
+      - oci-utils
+    update_cache: yes

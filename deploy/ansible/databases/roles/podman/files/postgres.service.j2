@@ -1,0 +1,18 @@
+[Unit]
+Description=PostgreSQL 18 (podman)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Restart=always
+TimeoutStartSec=300
+ExecStartPre=-/usr/bin/podman rm -f postgres
+ExecStart=/usr/bin/podman run --name postgres \
+  -p 5432:5432 \
+  -e POSTGRES_PASSWORD={{ postgres_db_password }} \
+  -v /data/postgres:/var/lib/postgresql/data:Z \
+  docker.io/library/postgres:18-alpine
+ExecStop=/usr/bin/podman stop -t 30 postgres
+
+[Install]
+WantedBy=multi-user.target

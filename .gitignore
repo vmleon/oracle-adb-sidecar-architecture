@@ -1,0 +1,54 @@
+# Environment files
+.env
+*.tfvars
+!*.tfvars.j2
+
+# Terraform
+deploy/tf/**/.terraform/
+deploy/tf/**/.terraform.lock.hcl
+deploy/tf/**/terraform.tfstate
+deploy/tf/**/terraform.tfstate.backup
+deploy/tf/**/tfplan
+deploy/tf/**/generated/
+deploy/tf/**/*.zip
+
+# Liquibase rendered configs
+database/liquibase/**/liquibase.properties
+database/wallet/
+
+# Java / Gradle
+src/backend/build/
+src/backend/.gradle/
+src/backend/out/
+
+# Node / Angular
+src/frontend/node_modules/
+src/frontend/dist/
+src/frontend/.angular/
+src/frontend/out-tsc/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

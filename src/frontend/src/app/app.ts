@@ -1,0 +1,44 @@
+import { Component } from '@angular/core';
+import { RouterOutlet } from '@angular/router';
+
+@Component({
+  selector: 'app-root',
+  imports: [RouterOutlet],
+  template: `
+    <header>
+      <h1><span class="oracle-red">Oracle</span> ADB Sidecar Architecture</h1>
+    </header>
+    <main>
+      <router-outlet />
+    </main>
+    <footer>
+      AI sidecar: Autonomous Database 26ai · Production workload (simulated): Oracle Free 26ai / PostgreSQL 18 / MongoDB 8
+    </footer>
+  `,
+  styles: `
+    :host { display: flex; flex-direction: column; min-height: 100vh; }
+    header {
+      padding: 0.75rem 1.5rem;
+      background: #2C2723;
+      border-bottom: 1px solid #3C3835;
+    }
+    h1 { margin: 0; font-size: 1.1rem; color: #F1EFED; }
+    h1 .oracle-red { color: #C74634; }
+    main {
+      flex: 1;
+      padding: 2rem 1.5rem;
+      max-width: 1100px;
+      width: 100%;
+      margin: 0 auto;
+    }
+    footer {
+      padding: 0.75rem 1.5rem;
+      background: #2C2723;
+      border-top: 1px solid #3C3835;
+      text-align: center;
+      color: #9B9590;
+      font-size: 0.8rem;
+    }
+  `,
+})
+export class App {}

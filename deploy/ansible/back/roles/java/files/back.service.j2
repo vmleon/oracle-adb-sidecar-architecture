@@ -1,0 +1,14 @@
+[Unit]
+Description=ADB Sidecar Backend
+After=syslog.target network-online.target
+Wants=network-online.target
+
+[Service]
+User=opc
+ExecStart=/bin/bash {{ back_dest_directory }}/run.sh
+SuccessExitStatus=143
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

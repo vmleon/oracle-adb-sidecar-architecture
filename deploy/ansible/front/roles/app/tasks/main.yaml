@@ -1,0 +1,31 @@
+---
+- name: Install nginx
+  ansible.builtin.dnf:
+    name: nginx
+    update_cache: yes
+
+- name: Copy frontend dist zip
+  ansible.builtin.copy:
+    src: files/web.zip
+    dest: /home/opc/web.zip
+
+- name: Unzip frontend dist
+  ansible.builtin.command: unzip -o /home/opc/web.zip -d /usr/share/nginx/html/
+
+- name: Render nginx config
+  ansible.builtin.template:
+    src: files/nginx.conf.j2
+    dest: /etc/nginx/nginx.conf
+  notify: restart nginx
+
+- name: Enable nginx
+  ansible.builtin.service:
+    name: nginx.service
+    state: started
+    enabled: yes
+
+- name: Disable firewalld
+  ansible.builtin.service:
+    name: firewalld
+    state: stopped
+    enabled: no

@@ -1,0 +1,80 @@
+#!/bin/bash
+set -e
+
+touch /home/opc/bootstrap.lock
+
+wait_for_dns() {
+  local host="yum.${region_name}.oci.oraclecloud.com"
+  local -i tries=0 max=30
+  until getent ahostsv4 "$host" >/dev/null 2>&1; do
+    tries=$((tries+1))
+    if [ $tries -ge $max ]; then
+      echo "FATAL: DNS for $host not ready after $((max*2))s" >&2
+      exit 1
+    fi
+    sleep 2
+  done
+  echo "DNS ready after $tries attempt(s): $host"
+}
+wait_for_dns
+
+dnf upgrade -y
+dnf install oracle-epel-release-el9 -y
+dnf install ansible-core -y
+
+# ADB wallet
+curl -4 --fail -sS "${wallet_par_full_path}" -o /home/opc/wallet.zip.b64
+base64 -d /home/opc/wallet.zip.b64 > /home/opc/wallet.zip && rm -f /home/opc/wallet.zip.b64
+mkdir -p /home/opc/back/wallet
+unzip /home/opc/wallet.zip -d /home/opc/back/wallet && rm -f /home/opc/wallet.zip
+chown -R opc:opc /home/opc/back/wallet
+
+# Ansible back artifact
+curl -4 --fail -sS "${ansible_back_par_full_path}" -o /home/opc/ansible_back.zip
+mkdir -p /home/opc/ansible_back
+unzip /home/opc/ansible_back.zip -d /home/opc/ansible_back && rm -f /home/opc/ansible_back.zip
+chown -R opc:opc /home/opc/ansible_back
+
+# Backend JAR artifact
+curl -4 --fail -sS "${back_jar_par_full_path}" -o /home/opc/back_jar.zip
+mkdir -p /home/opc/back
+unzip /home/opc/back_jar.zip -d /home/opc/back && rm -f /home/opc/back_jar.zip
+chown -R opc:opc /home/opc/back
+mkdir -p /home/opc/ansible_back/roles/java/files
+cp -r /home/opc/back/* /home/opc/ansible_back/roles/java/files/
+
+cat <<EOT >> /home/opc/ansible_params.json
+{
+  "project_name": "${project_name}",
+  "region_name": "${region_name}",
+  "back_dest_directory": "/home/opc/back",
+  "back_jar_file": "backend-1.0.0.jar",
+  "adb_service_name": "${adb_service_name}",
+  "adb_admin_password": "${adb_admin_password}",
+  "databases_private_ip": "${databases_private_ip}"
+}
+EOT
+chown opc:opc /home/opc/ansible_params.json
+chmod 600 /home/opc/ansible_params.json
+
+cat <<EOT >> /home/opc/back.ini
+[back]
+localhost ansible_connection=local ansible_user=root
+
+[back:vars]
+ansible_python_interpreter="/usr/bin/python3"
+EOT
+chown opc:opc /home/opc/back.ini
+
+touch /home/opc/ansible-playbook.log
+chown opc:opc /home/opc/ansible-playbook.log
+
+ANSIBLE_PYTHON_INTERPRETER="/usr/bin/python3" \
+    ansible-galaxy collection install ansible.posix | tee -a /home/opc/ansible-playbook.log
+
+ANSIBLE_PYTHON_INTERPRETER="/usr/bin/python3" ansible-playbook \
+    -i /home/opc/back.ini \
+    --extra-vars "@/home/opc/ansible_params.json" \
+    /home/opc/ansible_back/server.yaml | tee -a /home/opc/ansible-playbook.log
+
+rm /home/opc/bootstrap.lock

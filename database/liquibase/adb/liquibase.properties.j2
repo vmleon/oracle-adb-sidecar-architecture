@@ -1,0 +1,5 @@
+changelogFile=db.changelog-master.yaml
+url=jdbc:oracle:thin:@{{ adb_service_name }}_high?TNS_ADMIN={{ wallet_dir }}
+username=ADMIN
+password={{ admin_password }}
+liquibase.hub.mode=off

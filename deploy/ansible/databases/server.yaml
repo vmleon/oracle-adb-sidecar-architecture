@@ -1,0 +1,5 @@
+- name: Databases (Oracle Free 26ai + Postgres 18 + Mongo 8 in podman)
+  hosts: databases
+  become: true
+  roles:
+    - podman

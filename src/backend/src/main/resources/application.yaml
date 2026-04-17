@@ -1,0 +1,28 @@
+spring:
+  application:
+    name: back
+  main:
+    banner-mode: "off"
+  autoconfigure:
+    exclude: org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+  data:
+    mongodb:
+      uri: mongodb://admin:CHANGEME@localhost:27017/admin
+server:
+  port: 8080
+datasources:
+  adb:
+    url: jdbc:oracle:thin:@SERVICE_high?TNS_ADMIN=/path/to/wallet
+    username: ADMIN
+    password: CHANGEME
+    driver-class-name: oracle.jdbc.OracleDriver
+  oracle:
+    url: jdbc:oracle:thin:@//localhost:1521/FREEPDB1
+    username: SYSTEM
+    password: CHANGEME
+    driver-class-name: oracle.jdbc.OracleDriver
+  postgres:
+    url: jdbc:postgresql://localhost:5432/postgres
+    username: postgres
+    password: CHANGEME
+    driver-class-name: org.postgresql.Driver

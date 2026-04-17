@@ -1,0 +1,19 @@
+[Unit]
+Description=MongoDB 8 (podman)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Restart=always
+TimeoutStartSec=300
+ExecStartPre=-/usr/bin/podman rm -f mongo
+ExecStart=/usr/bin/podman run --name mongo \
+  -p 27017:27017 \
+  -e MONGO_INITDB_ROOT_USERNAME=admin \
+  -e MONGO_INITDB_ROOT_PASSWORD={{ mongo_db_password }} \
+  -v /data/mongo:/data/db:Z \
+  docker.io/library/mongo:8
+ExecStop=/usr/bin/podman stop -t 30 mongo
+
+[Install]
+WantedBy=multi-user.target

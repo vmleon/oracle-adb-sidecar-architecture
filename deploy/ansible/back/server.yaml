@@ -1,0 +1,5 @@
+- name: Back
+  hosts: back
+  become: true
+  roles:
+    - java

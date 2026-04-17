@@ -1,0 +1,65 @@
+#!/bin/bash
+set -e
+
+touch /home/opc/bootstrap.lock
+
+wait_for_dns() {
+  local host="yum.${region_name}.oci.oraclecloud.com"
+  local -i tries=0 max=30
+  until getent ahostsv4 "$host" >/dev/null 2>&1; do
+    tries=$((tries+1))
+    if [ $tries -ge $max ]; then
+      echo "FATAL: DNS for $host not ready after $((max*2))s" >&2
+      exit 1
+    fi
+    sleep 2
+  done
+  echo "DNS ready after $tries attempt(s): $host"
+}
+wait_for_dns
+
+dnf upgrade -y
+dnf install oracle-epel-release-el9 -y
+dnf install ansible-core -y
+
+# Ansible front artifact
+curl -4 --fail -sS "${ansible_front_par_full_path}" -o /home/opc/ansible_front.zip
+mkdir -p /home/opc/ansible_front
+unzip /home/opc/ansible_front.zip -d /home/opc/ansible_front && rm -f /home/opc/ansible_front.zip
+
+# Frontend dist artifact
+mkdir -p /home/opc/ansible_front/roles/app/files
+curl -4 --fail -sS "${front_par_full_path}" -o /home/opc/ansible_front/roles/app/files/web.zip
+chown -R opc:opc /home/opc/ansible_front
+
+cat <<EOT >> /home/opc/ansible_params.json
+{
+  "project_name": "${project_name}",
+  "region_name": "${region_name}",
+  "back_private_ip": "${back_private_ip}"
+}
+EOT
+chown opc:opc /home/opc/ansible_params.json
+chmod 600 /home/opc/ansible_params.json
+
+cat <<EOT >> /home/opc/front.ini
+[front]
+localhost ansible_connection=local ansible_user=root
+
+[front:vars]
+ansible_python_interpreter="/usr/bin/python3"
+EOT
+chown opc:opc /home/opc/front.ini
+
+touch /home/opc/ansible-playbook.log
+chown opc:opc /home/opc/ansible-playbook.log
+
+ANSIBLE_PYTHON_INTERPRETER="/usr/bin/python3" \
+    ansible-galaxy collection install ansible.posix | tee -a /home/opc/ansible-playbook.log
+
+ANSIBLE_PYTHON_INTERPRETER="/usr/bin/python3" ansible-playbook \
+    -i /home/opc/front.ini \
+    --extra-vars "@/home/opc/ansible_params.json" \
+    /home/opc/ansible_front/server.yaml | tee -a /home/opc/ansible-playbook.log
+
+rm /home/opc/bootstrap.lock
