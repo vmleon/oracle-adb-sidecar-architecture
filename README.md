@@ -187,6 +187,9 @@ the data travels:
 
 ```bash
 cd deploy/tf/app && terraform destroy
+```
+
+```bash
 cd ../../..
 python manage.py clean   # refuses if Terraform state still has resources
 ```

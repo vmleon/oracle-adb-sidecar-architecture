@@ -8,7 +8,10 @@ deploy/tf/**/.terraform/
 deploy/tf/**/.terraform.lock.hcl
 deploy/tf/**/terraform.tfstate
 deploy/tf/**/terraform.tfstate.backup
+deploy/tf/**/.terraform.tfstate.lock.info
 deploy/tf/**/tfplan
+deploy/tf/**/crash.log
+deploy/tf/**/crash.*.log
 deploy/tf/**/generated/
 deploy/tf/**/*.zip
 
