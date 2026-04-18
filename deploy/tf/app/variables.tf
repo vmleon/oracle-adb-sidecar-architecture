@@ -32,7 +32,22 @@ variable "instance_shape" {
   default = "VM.Standard.E4.Flex"
 }
 
-variable "db_admin_password" {
+variable "adb_admin_password" {
+  type      = string
+  sensitive = true
+}
+
+variable "oracle_db_password" {
+  type      = string
+  sensitive = true
+}
+
+variable "postgres_db_password" {
+  type      = string
+  sensitive = true
+}
+
+variable "mongo_db_password" {
   type      = string
   sensitive = true
 }

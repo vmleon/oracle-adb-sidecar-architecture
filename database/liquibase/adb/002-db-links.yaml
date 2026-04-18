@@ -1,0 +1,255 @@
+databaseChangeLog:
+  # --- Oracle Free 26ai (homogeneous link) ---
+
+  - changeSet:
+      id: adb-002-cred-orafree
+      author: adbsidecar
+      changes:
+        - sql:
+            endDelimiter: "/"
+            splitStatements: false
+            sql: |
+              BEGIN
+                DBMS_CLOUD.CREATE_CREDENTIAL(
+                  credential_name => 'ORAFREE_CRED',
+                  username        => 'SYSTEM',
+                  password        => '${oracle_db_password}'
+                );
+              END;
+              /
+      rollback:
+        - sql:
+            endDelimiter: "/"
+            splitStatements: false
+            sql: |
+              BEGIN DBMS_CLOUD.DROP_CREDENTIAL('ORAFREE_CRED'); END;
+              /
+
+  - changeSet:
+      id: adb-002-link-orafree
+      author: adbsidecar
+      changes:
+        - sql:
+            endDelimiter: "/"
+            splitStatements: false
+            sql: |
+              BEGIN
+                DBMS_CLOUD_ADMIN.CREATE_DATABASE_LINK(
+                  db_link_name    => 'ORAFREE_LINK',
+                  hostname        => '${databases_private_ip}',
+                  port            => 1521,
+                  service_name    => 'FREEPDB1',
+                  ssl_server_cert_dn => NULL,
+                  credential_name => 'ORAFREE_CRED',
+                  directory_name  => NULL,
+                  public_link     => FALSE,
+                  private_target  => TRUE
+                );
+              END;
+              /
+      rollback:
+        - sql:
+            endDelimiter: "/"
+            splitStatements: false
+            sql: |
+              BEGIN DBMS_CLOUD_ADMIN.DROP_DATABASE_LINK('ORAFREE_LINK'); END;
+              /
+
+  - changeSet:
+      id: adb-002-view-accounts
+      author: adbsidecar
+      changes:
+        - sql:
+            endDelimiter: "/"
+            splitStatements: false
+            sql: |
+              CREATE OR REPLACE VIEW V_ACCOUNTS AS
+              SELECT id, customer_name, balance
+              FROM accounts@ORAFREE_LINK
+              /
+      rollback:
+        - sql:
+            sql: DROP VIEW V_ACCOUNTS
+
+  - changeSet:
+      id: adb-002-view-transactions
+      author: adbsidecar
+      changes:
+        - sql:
+            endDelimiter: "/"
+            splitStatements: false
+            sql: |
+              CREATE OR REPLACE VIEW V_TRANSACTIONS AS
+              SELECT id, account_id, amount, tx_date
+              FROM transactions@ORAFREE_LINK
+              /
+      rollback:
+        - sql:
+            sql: DROP VIEW V_TRANSACTIONS
+
+  # --- PostgreSQL 18 (heterogeneous link) ---
+
+  - changeSet:
+      id: adb-002-cred-pg
+      author: adbsidecar
+      changes:
+        - sql:
+            endDelimiter: "/"
+            splitStatements: false
+            sql: |
+              BEGIN
+                DBMS_CLOUD.CREATE_CREDENTIAL(
+                  credential_name => 'PG_CRED',
+                  username        => 'postgres',
+                  password        => '${postgres_db_password}'
+                );
+              END;
+              /
+      rollback:
+        - sql:
+            endDelimiter: "/"
+            splitStatements: false
+            sql: |
+              BEGIN DBMS_CLOUD.DROP_CREDENTIAL('PG_CRED'); END;
+              /
+
+  - changeSet:
+      id: adb-002-link-pg
+      author: adbsidecar
+      changes:
+        - sql:
+            endDelimiter: "/"
+            splitStatements: false
+            sql: |
+              BEGIN
+                DBMS_CLOUD_ADMIN.CREATE_DATABASE_LINK(
+                  db_link_name    => 'PG_LINK',
+                  hostname        => '${databases_private_ip}',
+                  port            => 5432,
+                  service_name    => 'postgres',
+                  ssl_server_cert_dn => NULL,
+                  credential_name => 'PG_CRED',
+                  gateway_params  => JSON_OBJECT('db_type' VALUE 'postgres'),
+                  public_link     => FALSE,
+                  private_target  => TRUE
+                );
+              END;
+              /
+      rollback:
+        - sql:
+            endDelimiter: "/"
+            splitStatements: false
+            sql: |
+              BEGIN DBMS_CLOUD_ADMIN.DROP_DATABASE_LINK('PG_LINK'); END;
+              /
+
+  - changeSet:
+      id: adb-002-view-policies
+      author: adbsidecar
+      changes:
+        - sql:
+            endDelimiter: "/"
+            splitStatements: false
+            sql: |
+              CREATE OR REPLACE VIEW V_POLICIES AS
+              SELECT "id" AS id,
+                     "name" AS name,
+                     "description" AS description
+              FROM "policies"@PG_LINK
+              /
+      rollback:
+        - sql:
+            sql: DROP VIEW V_POLICIES
+
+  - changeSet:
+      id: adb-002-view-rules
+      author: adbsidecar
+      changes:
+        - sql:
+            endDelimiter: "/"
+            splitStatements: false
+            sql: |
+              CREATE OR REPLACE VIEW V_RULES AS
+              SELECT "id" AS id,
+                     "policy_id" AS policy_id,
+                     "expression" AS expression
+              FROM "rules"@PG_LINK
+              /
+      rollback:
+        - sql:
+            sql: DROP VIEW V_RULES
+
+  # --- MongoDB 8 (heterogeneous link) ---
+
+  - changeSet:
+      id: adb-002-cred-mongo
+      author: adbsidecar
+      changes:
+        - sql:
+            endDelimiter: "/"
+            splitStatements: false
+            sql: |
+              BEGIN
+                DBMS_CLOUD.CREATE_CREDENTIAL(
+                  credential_name => 'MONGO_CRED',
+                  username        => 'admin',
+                  password        => '${mongo_db_password}'
+                );
+              END;
+              /
+      rollback:
+        - sql:
+            endDelimiter: "/"
+            splitStatements: false
+            sql: |
+              BEGIN DBMS_CLOUD.DROP_CREDENTIAL('MONGO_CRED'); END;
+              /
+
+  - changeSet:
+      id: adb-002-link-mongo
+      author: adbsidecar
+      changes:
+        - sql:
+            endDelimiter: "/"
+            splitStatements: false
+            sql: |
+              BEGIN
+                DBMS_CLOUD_ADMIN.CREATE_DATABASE_LINK(
+                  db_link_name    => 'MONGO_LINK',
+                  hostname        => '${databases_private_ip}',
+                  port            => 27017,
+                  service_name    => 'admin',
+                  ssl_server_cert_dn => NULL,
+                  credential_name => 'MONGO_CRED',
+                  gateway_params  => JSON_OBJECT('db_type' VALUE 'mongodb'),
+                  public_link     => FALSE,
+                  private_target  => TRUE
+                );
+              END;
+              /
+      rollback:
+        - sql:
+            endDelimiter: "/"
+            splitStatements: false
+            sql: |
+              BEGIN DBMS_CLOUD_ADMIN.DROP_DATABASE_LINK('MONGO_LINK'); END;
+              /
+
+  - changeSet:
+      id: adb-002-view-support-tickets
+      author: adbsidecar
+      changes:
+        - sql:
+            endDelimiter: "/"
+            splitStatements: false
+            sql: |
+              CREATE OR REPLACE VIEW V_SUPPORT_TICKETS AS
+              SELECT CAST("ticket_id" AS NUMBER)        AS ticket_id,
+                     CAST("customer"  AS VARCHAR2(100)) AS customer,
+                     CAST("subject"   AS VARCHAR2(200)) AS subject,
+                     CAST("status"    AS VARCHAR2(20))  AS status
+              FROM "support_tickets"@MONGO_LINK
+              /
+      rollback:
+        - sql:
+            sql: DROP VIEW V_SUPPORT_TICKETS

@@ -1,5 +1,5 @@
 changelogFile=db.changelog-master.yaml
-url=jdbc:postgresql://{{ databases_host }}:5432/postgres
+url=jdbc:postgresql://{{ databases_private_ip }}:5432/postgres
 username=postgres
-password={{ postgres_password }}
+password={{ postgres_db_password }}
 liquibase.hub.mode=off

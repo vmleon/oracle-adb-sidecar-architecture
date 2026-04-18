@@ -1,11 +1,11 @@
 locals {
   cloud_init_content = templatefile("${path.module}/userdata/bootstrap.tftpl", {
-    project_name                   = var.project_name
-    region_name                    = var.region
+    project_name                    = var.project_name
+    region_name                     = var.region
     ansible_databases_par_full_path = var.ansible_databases_artifact_par_full_path
-    oracle_db_password             = var.oracle_db_password
-    postgres_db_password           = var.postgres_db_password
-    mongo_db_password              = var.mongo_db_password
+    oracle_db_password              = var.oracle_db_password
+    postgres_db_password            = var.postgres_db_password
+    mongo_db_password               = var.mongo_db_password
   })
 }
 

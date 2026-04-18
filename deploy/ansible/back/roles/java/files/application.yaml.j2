@@ -5,24 +5,24 @@ spring:
     banner-mode: "off"
   autoconfigure:
     exclude: org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+  data:
+    mongodb:
+      uri: mongodb://admin:{{ mongo_db_password }}@{{ databases_private_ip }}:27017/admin
 server:
   port: 8080
 datasources:
   adb:
-    url: jdbc:oracle:thin:@{{ adb_service_name }}_high?TNS_ADMIN=/home/opc/back/wallet
+    jdbc-url: jdbc:oracle:thin:@{{ adb_service_name }}_high?TNS_ADMIN=/home/opc/back/wallet
     username: ADMIN
     password: "{{ adb_admin_password }}"
     driver-class-name: oracle.jdbc.OracleDriver
   oracle:
-    url: jdbc:oracle:thin:@//{{ databases_private_ip }}:1521/FREEPDB1
+    jdbc-url: jdbc:oracle:thin:@//{{ databases_private_ip }}:1521/FREEPDB1
     username: SYSTEM
-    password: "{{ adb_admin_password }}"
+    password: "{{ oracle_db_password }}"
     driver-class-name: oracle.jdbc.OracleDriver
   postgres:
-    url: jdbc:postgresql://{{ databases_private_ip }}:5432/postgres
+    jdbc-url: jdbc:postgresql://{{ databases_private_ip }}:5432/postgres
     username: postgres
-    password: "{{ adb_admin_password }}"
+    password: "{{ postgres_db_password }}"
     driver-class-name: org.postgresql.Driver
-  mongo:
-    uri: mongodb://admin:{{ adb_admin_password }}@{{ databases_private_ip }}:27017/admin
-    database: admin

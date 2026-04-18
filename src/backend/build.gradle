@@ -24,6 +24,10 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-data-mongodb'
 
     runtimeOnly 'com.oracle.database.jdbc:ojdbc11:23.9.0.25.07'
+    // Pulls oraclepki + osdt_core + osdt_cert transitively — needed so
+    // ojdbc11 can read the SSO wallet (cwallet.sso). Without it we hit
+    // "NoSuchAlgorithmException: SSO KeyStore not available".
+    implementation 'com.oracle.database.spring:oracle-spring-boot-starter-wallet:26.1.0'
     runtimeOnly 'org.postgresql:postgresql'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'

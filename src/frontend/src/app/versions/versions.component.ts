@@ -1,43 +1,127 @@
 import { Component, inject, signal } from '@angular/core';
-import { VersionsService, VersionsResponse } from '../versions.service';
+import { VersionsService, DemoResponse, Row } from '../versions.service';
 
-type DbKey = keyof VersionsResponse;
+type EngineKey = keyof DemoResponse;
+
+type Entity = {
+  engine: EngineKey;
+  key: string;
+  errorKey: string;
+  label: string;
+};
 
 @Component({
   selector: 'app-versions',
   template: `
-    <h2>Database versions</h2>
+    <h2>Banking demo — federated across three engines</h2>
     <p class="subtitle">
-      Fetches the version of the ADB 26ai AI sidecar plus the three production databases it federates with.
-      A smoke test that every datasource in the architecture is reachable.
+      Three simulated production databases hold a toy banking dataset:
+      Oracle Free 26ai (accounts, transactions), PostgreSQL 18 (policies, rules),
+      MongoDB 8 (support tickets). The first button reads each database directly.
+      The second reads the same data through the ADB 26ai sidecar via DB_LINK views,
+      proving the federated path end-to-end.
     </p>
 
-    <button (click)="load()" [disabled]="loading()">
-      {{ loading() ? 'Querying...' : 'Get versions' }}
-    </button>
+    <section class="row">
+      <h3 class="row-title">Direct (backend → each DB)</h3>
+      <button (click)="load()" [disabled]="loading()">
+        {{ loading() ? 'Querying...' : 'Load banking demo' }}
+      </button>
 
-    @if (error()) {
-      <p class="error">{{ error() }}</p>
-    }
+      @if (error()) {
+        <p class="error">{{ error() }}</p>
+      }
 
-    @if (versions(); as v) {
-      <div class="grid">
-        @for (db of dbs; track db.key) {
-          <article class="card">
-            <h3>{{ db.label }}</h3>
-            <pre>{{ v[db.key] }}</pre>
-          </article>
-        }
-      </div>
-    }
+      @if (direct(); as d) {
+        <div class="grid">
+          @for (e of entities; track e.engine + ':' + e.key) {
+            <article class="card">
+              <h4>{{ e.label }}</h4>
+              @if (rowsFor(d, e); as rows) {
+                <table>
+                  <thead>
+                    <tr>
+                      @for (h of headersFor(rows); track h) {
+                        <th>{{ h }}</th>
+                      }
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (r of rows; track $index) {
+                      <tr>
+                        @for (h of headersFor(rows); track h) {
+                          <td>{{ cell(r, h) }}</td>
+                        }
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              } @else {
+                <p class="error">{{ errorFor(d, e) || 'no data' }}</p>
+              }
+            </article>
+          }
+        </div>
+      }
+    </section>
+
+    <section class="row">
+      <h3 class="row-title">Via ADB 26ai sidecar (DB_LINK federated)</h3>
+      <button (click)="loadViaSidecar()" [disabled]="sidecarLoading()">
+        {{ sidecarLoading() ? 'Querying...' : 'Load banking demo via ADB sidecar' }}
+      </button>
+
+      @if (sidecarError()) {
+        <p class="error">{{ sidecarError() }}</p>
+      }
+
+      @if (sidecar(); as d) {
+        <div class="grid">
+          @for (e of entities; track e.engine + ':' + e.key) {
+            <article class="card">
+              <h4>{{ e.label }}</h4>
+              @if (rowsFor(d, e); as rows) {
+                <table>
+                  <thead>
+                    <tr>
+                      @for (h of headersFor(rows); track h) {
+                        <th>{{ h }}</th>
+                      }
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (r of rows; track $index) {
+                      <tr>
+                        @for (h of headersFor(rows); track h) {
+                          <td>{{ cell(r, h) }}</td>
+                        }
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              } @else {
+                <p class="error">{{ errorFor(d, e) || 'no data' }}</p>
+              }
+            </article>
+          }
+        </div>
+      }
+    </section>
   `,
   styles: `
     h2 { font-family: Georgia, serif; margin-bottom: 0.25rem; }
-    .subtitle { color: #9B9590; margin-bottom: 1.25rem; font-size: 0.9rem; }
+    .subtitle { color: #9B9590; margin-bottom: 1.25rem; font-size: 0.9rem; line-height: 1.4; }
+    .row { margin-top: 2rem; }
+    .row-title {
+      font-family: Georgia, serif;
+      font-size: 1.1rem;
+      margin: 0 0 0.75rem;
+      color: #EAE6E1;
+    }
     .grid {
       margin-top: 1.5rem;
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
       gap: 1rem;
     }
     .card {
@@ -45,15 +129,23 @@ type DbKey = keyof VersionsResponse;
       border: 1px solid #3C3835;
       border-radius: 8px;
       padding: 1rem;
+      overflow-x: auto;
     }
-    .card h3 {
+    .card h4 {
       margin: 0 0 0.5rem;
       color: #C74634;
-      font-size: 0.95rem;
+      font-size: 0.9rem;
       text-transform: uppercase;
       letter-spacing: 0.05em;
     }
-    .error { color: #C74634; margin-top: 1rem; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    th, td {
+      text-align: left;
+      padding: 0.35rem 0.5rem;
+      border-bottom: 1px solid #3C3835;
+    }
+    th { color: #9B9590; font-weight: normal; text-transform: uppercase; font-size: 0.7rem; }
+    .error { color: #C74634; margin-top: 1rem; font-size: 0.85rem; }
   `,
 })
 export class VersionsComponent {
@@ -61,27 +153,74 @@ export class VersionsComponent {
 
   loading = signal(false);
   error = signal('');
-  versions = signal<VersionsResponse | null>(null);
+  direct = signal<DemoResponse | null>(null);
 
-  dbs: { key: DbKey; label: string }[] = [
-    { key: 'adb', label: 'ADB 26ai — AI sidecar' },
-    { key: 'oracle', label: 'Oracle Free 26ai — production (simulated)' },
-    { key: 'postgres', label: 'PostgreSQL 18 — production (simulated)' },
-    { key: 'mongo', label: 'MongoDB 8 — production (simulated)' },
+  sidecarLoading = signal(false);
+  sidecarError = signal('');
+  sidecar = signal<DemoResponse | null>(null);
+
+  entities: Entity[] = [
+    { engine: 'oracle',   key: 'accounts',        errorKey: 'accounts_error',     label: 'Oracle Free 26ai — accounts' },
+    { engine: 'oracle',   key: 'transactions',    errorKey: 'transactions_error', label: 'Oracle Free 26ai — transactions' },
+    { engine: 'postgres', key: 'policies',        errorKey: 'policies_error',     label: 'PostgreSQL 18 — policies' },
+    { engine: 'postgres', key: 'rules',           errorKey: 'rules_error',        label: 'PostgreSQL 18 — rules' },
+    { engine: 'mongo',    key: 'support_tickets', errorKey: 'error',              label: 'MongoDB 8 — support_tickets' },
   ];
+
+  rowsFor(d: DemoResponse, e: Entity): Row[] | null {
+    const section = d[e.engine] as Record<string, unknown> | undefined;
+    if (!section) return null;
+    const rows = section[e.key];
+    return Array.isArray(rows) ? (rows as Row[]) : null;
+  }
+
+  errorFor(d: DemoResponse, e: Entity): string | null {
+    const section = d[e.engine] as Record<string, unknown> | undefined;
+    if (!section) return null;
+    const err = section[e.errorKey];
+    return typeof err === 'string' ? err : null;
+  }
+
+  headersFor(rows: Row[]): string[] {
+    if (!rows.length) return [];
+    return Object.keys(rows[0]);
+  }
+
+  cell(row: Row, header: string): string {
+    const v = row[header];
+    if (v == null) return '';
+    if (typeof v === 'object') return JSON.stringify(v);
+    return String(v);
+  }
 
   load() {
     this.loading.set(true);
     this.error.set('');
-    this.versions.set(null);
+    this.direct.set(null);
     this.service.fetch().subscribe({
       next: (res) => {
-        this.versions.set(res);
+        this.direct.set(res);
         this.loading.set(false);
       },
       error: (err) => {
         this.error.set(err?.error?.message || 'Request failed');
         this.loading.set(false);
+      },
+    });
+  }
+
+  loadViaSidecar() {
+    this.sidecarLoading.set(true);
+    this.sidecarError.set('');
+    this.sidecar.set(null);
+    this.service.fetchViaSidecar().subscribe({
+      next: (res) => {
+        this.sidecar.set(res);
+        this.sidecarLoading.set(false);
+      },
+      error: (err) => {
+        this.sidecarError.set(err?.error?.message || 'Request failed');
+        this.sidecarLoading.set(false);
       },
     });
   }

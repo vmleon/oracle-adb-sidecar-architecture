@@ -1,10 +1,10 @@
 locals {
   cloud_init_content = templatefile("${path.module}/userdata/bootstrap.tftpl", {
-    project_name               = var.project_name
-    region_name                = var.region
+    project_name                = var.project_name
+    region_name                 = var.region
     ansible_front_par_full_path = var.ansible_front_artifact_par_full_path
-    front_par_full_path        = var.front_artifact_par_full_path
-    back_private_ip            = var.back_private_ip
+    front_par_full_path         = var.front_artifact_par_full_path
+    back_private_ip             = var.back_private_ip
   })
 }
 

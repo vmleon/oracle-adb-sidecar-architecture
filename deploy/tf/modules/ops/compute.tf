@@ -5,6 +5,16 @@ locals {
     project_name              = var.project_name
     region_name               = var.region
     ansible_ops_par_full_path = var.ansible_ops_artifact_par_full_path
+    wallet_par_full_path      = var.wallet_par_full_path
+    database_par_full_path    = var.database_par_full_path
+    adb_service_name          = var.adb_service_name
+    adb_admin_password        = var.adb_admin_password
+    oracle_db_password        = var.oracle_db_password
+    postgres_db_password      = var.postgres_db_password
+    mongo_db_password         = var.mongo_db_password
+    databases_private_ip      = var.databases_private_ip
+    back_private_ip           = var.back_private_ip
+    front_private_ip          = var.front_private_ip
   })
 }
 

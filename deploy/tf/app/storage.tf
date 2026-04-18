@@ -76,6 +76,25 @@ resource "oci_objectstorage_preauthrequest" "ansible_databases_artifact_par" {
   time_expires = timeadd(time_static.deploy_time.rfc3339, "${var.artifacts_par_expiration_in_days * 24}h")
 }
 
+# --- Database schema bundle (all four engines) ---
+
+resource "oci_objectstorage_object" "database_artifact_object" {
+  bucket      = oci_objectstorage_bucket.artifacts_bucket.name
+  source      = data.archive_file.database_artifact.output_path
+  namespace   = data.oci_objectstorage_namespace.objectstorage_namespace.namespace
+  object      = "database_artifact.zip"
+  content_md5 = data.archive_file.database_artifact.output_md5
+}
+
+resource "oci_objectstorage_preauthrequest" "database_artifact_par" {
+  namespace    = data.oci_objectstorage_namespace.objectstorage_namespace.namespace
+  bucket       = oci_objectstorage_bucket.artifacts_bucket.name
+  name         = "database_artifact_par"
+  access_type  = "ObjectRead"
+  object_name  = oci_objectstorage_object.database_artifact_object.object
+  time_expires = timeadd(time_static.deploy_time.rfc3339, "${var.artifacts_par_expiration_in_days * 24}h")
+}
+
 # --- Application artifacts ---
 
 resource "oci_objectstorage_object" "back_jar_artifact_object" {

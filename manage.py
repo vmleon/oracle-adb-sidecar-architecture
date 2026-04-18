@@ -208,7 +208,10 @@ def setup():
         default="adbsidecar",
     ).execute()
 
-    db_admin_password = _generate_password()
+    adb_admin_password = _generate_password()
+    oracle_db_password = _generate_password()
+    postgres_db_password = _generate_password()
+    mongo_db_password = _generate_password()
 
     console.print(
         Panel(
@@ -218,7 +221,7 @@ def setup():
             f"Compartment:  {compartment_ocid}\n"
             f"SSH key:      {ssh_private_key_path}\n"
             f"Project name: {project_name}\n"
-            f"DB password:  (generated, stored in .env)",
+            f"DB passwords: (4 generated — adb/oracle/postgres/mongo — stored in .env)",
             title="Configuration Summary",
         )
     )
@@ -236,7 +239,10 @@ def setup():
         "OCI_COMPARTMENT_OCID": compartment_ocid,
         "OCI_REGION": region,
         "PROJECT_NAME": project_name,
-        "DB_ADMIN_PASSWORD": db_admin_password,
+        "ADB_ADMIN_PASSWORD": adb_admin_password,
+        "ORACLE_DB_PASSWORD": oracle_db_password,
+        "POSTGRES_DB_PASSWORD": postgres_db_password,
+        "MONGO_DB_PASSWORD": mongo_db_password,
         "SSH_PRIVATE_KEY_PATH": ssh_private_key_path,
         "SSH_PUBLIC_KEY": ssh_public_key,
     }
@@ -328,7 +334,10 @@ def tf():
         "OCI_COMPARTMENT_OCID",
         "OCI_REGION",
         "PROJECT_NAME",
-        "DB_ADMIN_PASSWORD",
+        "ADB_ADMIN_PASSWORD",
+        "ORACLE_DB_PASSWORD",
+        "POSTGRES_DB_PASSWORD",
+        "MONGO_DB_PASSWORD",
         "SSH_PUBLIC_KEY",
         "SSH_PRIVATE_KEY_PATH",
     ]
@@ -368,7 +377,10 @@ def tf():
         compartment_ocid=os.getenv("OCI_COMPARTMENT_OCID"),
         region=os.getenv("OCI_REGION"),
         project_name=os.getenv("PROJECT_NAME"),
-        db_admin_password=os.getenv("DB_ADMIN_PASSWORD"),
+        adb_admin_password=os.getenv("ADB_ADMIN_PASSWORD"),
+        oracle_db_password=os.getenv("ORACLE_DB_PASSWORD"),
+        postgres_db_password=os.getenv("POSTGRES_DB_PASSWORD"),
+        mongo_db_password=os.getenv("MONGO_DB_PASSWORD"),
         ssh_public_key=os.getenv("SSH_PUBLIC_KEY"),
         ssh_private_key_path=os.getenv("SSH_PRIVATE_KEY_PATH"),
     )
@@ -439,7 +451,7 @@ def info():
     console.print(
         Panel(
             f"Frontend:     http://{lb_ip or 'N/A'}\n"
-            f"Versions API: http://{lb_ip or 'N/A'}/api/v1/versions\n"
+            f"Demo API:     http://{lb_ip or 'N/A'}/api/v1/demo\n"
             f"Ops bastion:  {ops_ip}\n"
             f"SSH:          {ssh_cmd}",
             title="Deployment",

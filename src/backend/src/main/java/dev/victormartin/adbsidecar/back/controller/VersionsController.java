@@ -1,6 +1,7 @@
 package dev.victormartin.adbsidecar.back.controller;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import org.bson.Document;
@@ -31,39 +32,96 @@ public class VersionsController {
         this.mongo = mongo;
     }
 
-    @GetMapping("/versions")
-    public Map<String, String> versions() {
-        Map<String, String> result = new LinkedHashMap<>();
-        result.put("adb", queryOracle(adbJdbc));
-        result.put("oracle", queryOracle(oracleJdbc));
-        result.put("postgres", queryPostgres());
-        result.put("mongo", queryMongo());
+    @GetMapping("/demo")
+    public Map<String, Object> demo() {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("oracle", oracleSectionDirect());
+        result.put("postgres", postgresSectionDirect());
+        result.put("mongo", mongoSectionDirect());
         return result;
     }
 
-    private String queryOracle(JdbcTemplate jdbc) {
-        try {
-            return jdbc.queryForObject(
-                    "SELECT BANNER_FULL FROM V$VERSION WHERE ROWNUM = 1", String.class);
-        } catch (Exception e) {
-            return "ERROR: " + e.getMessage();
-        }
+    @GetMapping("/demo/via-sidecar")
+    public Map<String, Object> demoViaSidecar() {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("oracle", oracleSectionViaSidecar());
+        result.put("postgres", postgresSectionViaSidecar());
+        result.put("mongo", mongoSectionViaSidecar());
+        return result;
     }
 
-    private String queryPostgres() {
-        try {
-            return postgresJdbc.queryForObject("SELECT version()", String.class);
-        } catch (Exception e) {
-            return "ERROR: " + e.getMessage();
-        }
+    private Map<String, Object> oracleSectionDirect() {
+        return section(
+                () -> oracleJdbc.queryForList("SELECT id, customer_name, balance FROM accounts ORDER BY id"),
+                () -> oracleJdbc.queryForList("SELECT id, account_id, amount, tx_date FROM transactions ORDER BY id"),
+                "accounts", "transactions");
     }
 
-    private String queryMongo() {
+    private Map<String, Object> oracleSectionViaSidecar() {
+        return section(
+                () -> adbJdbc.queryForList("SELECT id, customer_name, balance FROM V_ACCOUNTS ORDER BY id"),
+                () -> adbJdbc.queryForList("SELECT id, account_id, amount, tx_date FROM V_TRANSACTIONS ORDER BY id"),
+                "accounts", "transactions");
+    }
+
+    private Map<String, Object> postgresSectionDirect() {
+        return section(
+                () -> postgresJdbc.queryForList("SELECT id, name, description FROM policies ORDER BY id"),
+                () -> postgresJdbc.queryForList("SELECT id, policy_id, expression FROM rules ORDER BY id"),
+                "policies", "rules");
+    }
+
+    private Map<String, Object> postgresSectionViaSidecar() {
+        return section(
+                () -> adbJdbc.queryForList("SELECT id, name, description FROM V_POLICIES ORDER BY id"),
+                () -> adbJdbc.queryForList("SELECT id, policy_id, expression FROM V_RULES ORDER BY id"),
+                "policies", "rules");
+    }
+
+    private Map<String, Object> mongoSectionDirect() {
+        Map<String, Object> out = new LinkedHashMap<>();
         try {
-            Document buildInfo = mongo.executeCommand("{ buildInfo: 1 }");
-            return "MongoDB " + buildInfo.getString("version");
+            List<Document> docs = mongo.findAll(Document.class, "support_tickets");
+            docs.forEach(d -> d.remove("_id"));
+            out.put("support_tickets", docs);
         } catch (Exception e) {
-            return "ERROR: " + e.getMessage();
+            out.put("error", e.getMessage());
         }
+        return out;
+    }
+
+    private Map<String, Object> mongoSectionViaSidecar() {
+        Map<String, Object> out = new LinkedHashMap<>();
+        try {
+            out.put("support_tickets", adbJdbc.queryForList(
+                    "SELECT ticket_id, customer, subject, status FROM V_SUPPORT_TICKETS ORDER BY ticket_id"));
+        } catch (Exception e) {
+            out.put("error", e.getMessage());
+        }
+        return out;
+    }
+
+    private Map<String, Object> section(
+            SqlSupplier<List<Map<String, Object>>> first,
+            SqlSupplier<List<Map<String, Object>>> second,
+            String firstKey,
+            String secondKey) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        try {
+            out.put(firstKey, first.get());
+        } catch (Exception e) {
+            out.put(firstKey + "_error", e.getMessage());
+        }
+        try {
+            out.put(secondKey, second.get());
+        } catch (Exception e) {
+            out.put(secondKey + "_error", e.getMessage());
+        }
+        return out;
+    }
+
+    @FunctionalInterface
+    private interface SqlSupplier<T> {
+        T get() throws Exception;
     }
 }

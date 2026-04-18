@@ -6,7 +6,7 @@ In this architecture **ADB 26ai is the sidecar**. It does _not_ host the product
 
 This unlocks an incremental modernization path: keep the existing production databases running unchanged, use the ADB 26ai sidecar to power new AI features against the same data, and migrate workloads into ADB 26ai on your own schedule.
 
-The first iteration ships one user-facing feature: **a button that fetches the version of every database**, proving every connection works end-to-end. Subsequent iterations wire the ADB sidecar into each production DB via DB_LINK / DBMS_CLOUD_LINK so 26ai features can operate over the production data.
+The frontend ships two buttons against a small banking demo dataset seeded on first deploy: **accounts + transactions** in Oracle Free, **policies + rules** in PostgreSQL, **support_tickets** in MongoDB. The first button reads each database directly from the Spring Boot backend (smoke test that every datasource is reachable). The second asks the ADB 26ai sidecar to project the same data through DB_LINK views (`V_ACCOUNTS`, `V_TRANSACTIONS`, `V_POLICIES`, `V_RULES`, `V_SUPPORT_TICKETS`) — proving the federated path end-to-end. Subsequent iterations build richer 26ai features (Vector Search, Select AI) on top of those same views.
 
 ## Architecture
 
@@ -85,12 +85,63 @@ flowchart TB
 
 ## Provisioning flow
 
-1. `python manage.py setup` — interactive OCI config (profile, region, compartment, SSH key). Generates an Oracle-compliant DB password. Writes `.env`.
-2. `python manage.py build` — builds the Spring Boot jar (`./gradlew build -x test`) and the Angular dist (`npm install && npm run build`).
-3. `python manage.py tf` — renders `deploy/tf/app/terraform.tfvars` from `.env`.
-4. `cd deploy/tf/app && terraform init && terraform plan -out=tfplan && terraform apply tfplan` — provisions VCN, ADB 26ai, 4 computes, LB, Object Storage bucket, and 7-day pre-authenticated requests (PARs) for every artifact.
-5. Cloud-init on each instance pulls its artifact via PAR and runs Ansible **locally** (no SSH between instances).
-6. `python manage.py info` — prints the LB public IP, ops SSH command, and the versions endpoint URL.
+> **First time only:** create the virtualenv and install Python dependencies.
+
+```bash
+python -m venv venv
+```
+
+```bash
+pip install -r requirements.txt
+```
+
+Activate the virtualenv (every new shell):
+
+```bash
+source venv/bin/activate
+```
+
+Interactive OCI config (profile, region, compartment, SSH key). Generates an Oracle-compliant DB password. Writes `.env`.
+
+```bash
+python manage.py setup
+```
+
+Builds the Spring Boot jar (`./gradlew build -x test`) and the Angular dist (`npm install && npm run build`).
+
+```bash
+python manage.py build
+```
+
+Renders `deploy/tf/app/terraform.tfvars` from `.env`.
+
+```bash
+python manage.py tf
+```
+
+Provisions VCN, ADB 26ai, 4 computes, LB, Object Storage bucket, and 7-day pre-authenticated requests (PARs) for every artifact.
+
+```bash
+cd deploy/tf/app
+terraform init
+terraform plan -out=tfplan
+```
+
+```bash
+terraform apply tfplan
+```
+
+Cloud-init on each instance pulls its artifact via PAR and runs Ansible **locally** (no SSH between instances).
+
+Prints the LB public IP, ops SSH command, and the demo endpoint URL.
+
+```bash
+cd ../../..
+```
+
+```bash
+python manage.py info
+```
 
 ## Prerequisites
 
@@ -102,7 +153,7 @@ flowchart TB
 - Gradle (one-time, to bootstrap the wrapper: `cd src/backend && gradle wrapper --gradle-version 8.13`)
 - An RSA SSH keypair (e.g. `~/.ssh/id_rsa` + `id_rsa.pub`)
 
-## Verifying iteration 1
+## Verifying
 
 ```bash
 # After terraform apply
@@ -110,25 +161,27 @@ python manage.py info
 
 # Open the load balancer IP in a browser, or:
 curl http://<lb_public_ip>/api/v1/health
-curl http://<lb_public_ip>/api/v1/versions
+curl http://<lb_public_ip>/api/v1/demo              # direct: backend → each DB
+curl http://<lb_public_ip>/api/v1/demo/via-sidecar  # federated: backend → ADB → DB_LINKs
 ```
 
-The versions endpoint returns:
+The demo endpoint returns the banking dataset grouped by engine:
 
 ```json
 {
-  "adb": "Oracle Database 26ai Enterprise Edition Release 26.x.x.x.x ...",
-  "oracle": "Oracle Database 26ai Free Release 26.x.x.x.x ...",
-  "postgres": "PostgreSQL 18.x on x86_64-pc-linux-musl, ...",
-  "mongo": "MongoDB 8.0.x"
+  "oracle":   { "accounts":        [...], "transactions": [...] },
+  "postgres": { "policies":        [...], "rules":        [...] },
+  "mongo":    { "support_tickets": [...] }
 }
 ```
 
-Each value is the result of:
+Both endpoints return the **same shape** — the only difference is the path
+the data travels:
 
-- ADB / Oracle: `SELECT BANNER_FULL FROM V$VERSION`
-- Postgres: `SELECT version()`
-- Mongo: `db.runCommand({buildInfo: 1}).version`
+- `/demo` — backend opens a JDBC / Mongo connection to each production engine.
+- `/demo/via-sidecar` — backend issues a single JDBC query to ADB, which
+  resolves each view (`V_ACCOUNTS`, `V_TRANSACTIONS`, `V_POLICIES`, `V_RULES`,
+  `V_SUPPORT_TICKETS`) through its DB_LINKs to the three production engines.
 
 ## Cleanup
 

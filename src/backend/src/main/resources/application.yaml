@@ -12,17 +12,17 @@ server:
   port: 8080
 datasources:
   adb:
-    url: jdbc:oracle:thin:@SERVICE_high?TNS_ADMIN=/path/to/wallet
+    jdbc-url: jdbc:oracle:thin:@SERVICE_high?TNS_ADMIN=/path/to/wallet
     username: ADMIN
     password: CHANGEME
     driver-class-name: oracle.jdbc.OracleDriver
   oracle:
-    url: jdbc:oracle:thin:@//localhost:1521/FREEPDB1
+    jdbc-url: jdbc:oracle:thin:@//localhost:1521/FREEPDB1
     username: SYSTEM
     password: CHANGEME
     driver-class-name: oracle.jdbc.OracleDriver
   postgres:
-    url: jdbc:postgresql://localhost:5432/postgres
+    jdbc-url: jdbc:postgresql://localhost:5432/postgres
     username: postgres
     password: CHANGEME
     driver-class-name: org.postgresql.Driver

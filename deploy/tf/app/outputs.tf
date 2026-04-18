@@ -26,7 +26,7 @@ output "adb_db_name" {
   value = module.adbs.db_name
 }
 
-output "db_admin_password" {
+output "adb_admin_password" {
   value     = module.adbs.admin_password
   sensitive = true
 }

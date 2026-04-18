@@ -15,7 +15,8 @@ resource "oci_database_autonomous_database" "adb" {
   db_version                  = local.db_version
   display_name                = "${var.project_name}${var.deploy_id}"
   is_mtls_connection_required = true
-  whitelisted_ips             = var.autonomous_database_db_whitelisted_ips
+  subnet_id                   = var.subnet_id
+  nsg_ids                     = var.nsg_ids
   is_auto_scaling_enabled     = true
   license_model               = var.autonomous_database_db_license
 }

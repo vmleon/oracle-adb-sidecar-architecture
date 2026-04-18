@@ -2,16 +2,16 @@
 
 **Date**: 2026-04-17
 **Architecture**: Autonomous Database 26ai attached as an **AI sidecar** to three production databases (Oracle Free 26ai / Postgres 18 / Mongo 8 running in podman on a single "databases" compute). Spring Boot backend, Angular frontend, ops bastion. The goal of the architecture is to bring 26ai features (Vector Search, Hybrid Vector Index, Select AI) to workloads that still run on older/other engines, via DB_LINK and federated queries — no rehost required. Apache Iceberg is also a target capability but requires a workload change — see gap #9.
-**Iteration 1 goal**: end-to-end versions endpoint exposed by a single button, proving every datasource is wired.
+**Iteration 1 goal**: end-to-end banking-demo endpoint exposed by a single button, proving every datasource is wired — both directly and through the ADB sidecar via DB_LINK.
 
 ## What this iteration ships
 
 - `manage.py` (Click + Rich + InquirerPy + jinja2 + dotenv + OCI SDK) with `setup / build / tf / info / clean`.
 - Terraform under `deploy/tf/` with five modules (adbs, ops, front, back, databases) and per-artifact pre-authenticated requests.
 - Ansible under `deploy/ansible/` with one role per playbook, executed locally on each instance via cloud-init.
-- Spring Boot 3.5 backend with 4 datasource beans (3 JDBC + Mongo) and `GET /api/v1/versions`.
-- Angular 21 SPA with one route (`/versions`) — a button that calls the endpoint and renders four cards.
-- Liquibase changelog scaffolding for ADB / Oracle / Postgres + `mongosh` init.js — each ships a trivial `deployment_marker` table/collection so the schema-deploy pipeline can be exercised without business logic.
+- Spring Boot 3.5 backend with 4 datasource beans (3 JDBC + Mongo) and `GET /api/v1/demo` + `GET /api/v1/demo/via-sidecar`.
+- Angular 21 SPA with one route (`/demo`) — two buttons that call each endpoint and render a per-entity table per engine.
+- Liquibase changelog scaffolding for ADB / Oracle / Postgres + `mongosh` init.js — each engine ships `deployment_marker` plus the banking demo data (`accounts`/`transactions` in Oracle, `policies`/`rules` in Postgres, `support_tickets` in Mongo).
 
 ## Key changes vs. the previous (deleted) plan
 
@@ -29,49 +29,32 @@
 
 ## Known gaps & deferred items
 
-### 1. ADB sidecar → production DBs (DB_LINK / DBMS_CLOUD_LINK)
+### 1. ADB sidecar → production DBs (DB_LINK)
 
-**Status**: not yet wired. This is the core point of the architecture, deferred to iteration 2.
-**Why**: ADB has a public endpoint with IP whitelist (`whitelisted_ips = ["0.0.0.0/0"]` in `modules/adbs/variables.tf` — POC default). For the ADB sidecar to reach the simulated-production compute via DB_LINK, you need either:
+**Status**: wired in iteration 2.
+**How**: ADB now runs on a **private endpoint** in `db_subnet` (`modules/adbs/db.tf` via `subnet_id` + `nsg_ids`). The `nsg_adb` NSG (`deploy/tf/app/network.tf`) allows ingress on 1522 from the app and public subnets, and the `db_seclist` now allows the ADB private endpoint (same-subnet source) to reach Oracle/Postgres/Mongo on 1521/5432/27017.
 
-- An ADB **private endpoint** attached to the VCN (preferred), OR
-- A public IP on the databases compute (not in the current design — it sits in a private subnet behind NAT).
+`database/liquibase/adb/002-db-links.yaml` creates three `DBMS_CLOUD.CREATE_CREDENTIAL` credentials, three `DBMS_CLOUD_ADMIN.CREATE_DATABASE_LINK` entries (`ORAFREE_LINK`, `PG_LINK`, `MONGO_LINK`) and five banking views (`V_ACCOUNTS`, `V_TRANSACTIONS`, `V_POLICIES`, `V_RULES`, `V_SUPPORT_TICKETS`) on ADB. The backend exposes `GET /api/v1/demo/via-sidecar`, and the frontend has a second button that queries it.
 
-**Path forward**: switch the ADB module to `nsg_ids` + private endpoint + `subnet_id = oci_core_subnet.db_subnet.id` (or a dedicated subnet). Then add DB_LINK/DBMS_CLOUD_LINK changesets under `database/liquibase/adb/` targeting the Oracle, Postgres, and Mongo production databases so 26ai features can query them federated.
+### 2. Liquibase invocation
 
-### 2. Liquibase invocation is manual
+Runs automatically on the ops bastion during cloud-init (`deploy/ansible/ops/roles/base/tasks/main.yaml`): installs Liquibase 4.29.2 + ojdbc11, renders `liquibase.properties.j2` from Terraform-supplied vars, waits for the three container DBs to accept TCP, then runs `liquibase update` against the ADB private endpoint. Idempotent; re-applying Terraform re-runs cloud-init, but Liquibase tracks applied changesets.
 
-The changelogs and `liquibase.properties.j2` templates are present but `manage.py` does **not** invoke Liquibase yet. To run them once iteration 1 is up:
-
-```bash
-# ADB (after terraform apply, wallet is in deploy/tf/app/generated/wallet.zip)
-cd database/liquibase/adb
-liquibase --url=jdbc:oracle:thin:@<svc>_high?TNS_ADMIN=<wallet_dir> \
-  --username=ADMIN --password=<pwd> --changelog-file=db.changelog-master.yaml update
-```
-
-A future `manage.py liquibase` command can render the .properties.j2 files and shell out, mirroring `oracle-database-mcp-intro`'s `cloud_deploy()` pattern.
+Output is captured to `/home/opc/ops/liquibase.log` on the ops host.
 
 ### 3. Container image tags may need adjustment
 
 Defaults in `deploy/ansible/databases/roles/podman/files/`:
 
-- `container-registry.oracle.com/database/free:latest-26ai`
+- `container-registry.oracle.com/database/free:latest` (currently 26ai; explicit version tag is `23.26.0.0` — Oracle's internal line for 26ai is 23.26.x)
 - `docker.io/library/postgres:18-alpine`
 - `docker.io/library/mongo:8`
 
-If a tag is unavailable in your registry/region, edit the `.service.j2` files. Oracle Free's tag scheme is `<release>-<flavor>` (e.g. `26ai-full`, `26ai-lite`).
+If a tag is unavailable in your registry/region, edit the `.service.j2` files. Pin to `23.26.0.0` (or `23.26.0.0-lite` / `23.26.0.0-lite-arm64`) if you don't want `latest` to drift.
 
-### 4. Gradle wrapper not committed
+### 4. Gradle wrapper
 
-`build.gradle` and `settings.gradle` ship; the wrapper jar does not. First-time bootstrap:
-
-```bash
-cd src/backend
-gradle wrapper --gradle-version 8.13
-```
-
-After that, `manage.py build` uses `./gradlew build -x test`.
+`gradlew`, `gradlew.bat`, and `gradle/wrapper/` are committed. `manage.py build` runs `./gradlew build -x test` straight from a fresh clone — no `gradle` install required.
 
 ### 5. Tests are skipped in `manage.py build`
 
@@ -87,7 +70,7 @@ Set in `deploy/tf/modules/databases/compute.tf` (`boot_volume_size_in_gbs = 200`
 
 ### 8. Cleanup of Object Storage artifacts
 
-`terraform destroy` removes the bucket including its objects. PARs expire after 7 days regardless (`artifacts_par_expiration_in_days`). Stale PARs are harmless but can be regenerated by re-running `terraform apply`.
+Every object in `artifacts_*` is a Terraform-managed resource, so `terraform destroy` deletes the objects before the bucket and the bucket delete succeeds. If you manually upload an object to that bucket (e.g. ad-hoc debugging), `destroy` will fail with `BucketNotEmpty` — delete the stray object first or bump the OCI provider to a version that supports `force_delete`. PARs expire after 7 days regardless (`artifacts_par_expiration_in_days`).
 
 ### 9. Apache Iceberg support — pursue alongside the AI workload
 
@@ -102,7 +85,31 @@ Set in `deploy/tf/modules/databases/compute.tf` (`boot_volume_size_in_gbs = 200`
 
 When we wire this up, also add Iceberg-specific Liquibase changesets under `database/liquibase/adb/` (DBMS_CLOUD.CREATE_EXTERNAL_TABLE pointing at the relevant Iceberg catalog) and a frontend page that runs a federated Iceberg query.
 
+### 10. Heterogeneous connectivity support matrix
+
+**Status**: not verified. ADB's Oracle-Managed Heterogeneous Connectivity has a version matrix per target engine (`db_type`). We currently pin **PostgreSQL 18** and **MongoDB 8** in `database/liquibase/adb/002-db-links.yaml` and `docs/FEDERATED_QUERIES.md` without checking whether those specific target versions are in the matrix published by the ADB release we land on.
+
+**TODO**: after the first deploy, run on ADB
+
+```sql
+SELECT database_type, database_version, gateway_param_name, gateway_param_description
+FROM   HETEROGENEOUS_CONNECTIVITY_INFO
+WHERE  database_type IN ('postgres','mongodb');
+```
+
+If the listed `database_version` range does not cover 18 (postgres) or 8 (mongodb), drop the production container versions to a supported one and update the tags in `deploy/ansible/databases/roles/podman/files/*.service.j2` plus the prose in `docs/FEDERATED_QUERIES.md`. For the POC we accept the risk that a first deploy may surface a gateway-version mismatch that needs a downgrade.
+
 ## Iteration roadmap
+
+**TODO — first line of work after the architecture is done:**
+
+Ship at least one real 26ai capability against federated production data — otherwise the sidecar story is indistinguishable from Oracle Database Gateway. Concrete minimum:
+
+- Create a Select AI profile on ADB (`DBMS_CLOUD_AI.CREATE_PROFILE`) that points at the federated banking views already created by `002-db-links.yaml` (`V_ACCOUNTS`, `V_TRANSACTIONS`, `V_POLICIES`, `V_RULES`, `V_SUPPORT_TICKETS`).
+- Add a third frontend page: free-text prompt → `/api/v1/select-ai` → `SELECT AI CHAT ...` on ADB → answer derived from live production-container data ("which customers hit any AML rule last week?").
+- Follow up with a Vector Search example (embed `support_tickets.subject` into an ADB `VECTOR` column + similarity query over support narratives).
+
+Until this ships, every reviewer will ask "so what does 26ai actually give me here?"
 
 **Iteration 2 (likely next):**
 
@@ -130,7 +137,8 @@ When we wire this up, also add Iceberg-specific Liquibase changesets under `data
 - [ ] `terraform apply` completes in ~15–20 minutes.
 - [ ] `python manage.py info` prints the LB IP and ops SSH command.
 - [ ] `curl http://<lb>/api/v1/health` returns `{"status":"UP"}`.
-- [ ] `curl http://<lb>/api/v1/versions` returns four non-error strings (allow 5–10 minutes after `terraform apply` for the Oracle Free container to finish initializing).
+- [ ] `curl http://<lb>/api/v1/demo` returns banking rows for oracle / postgres / mongo (allow 5–10 minutes after `terraform apply` for the Oracle Free container to finish initializing).
+- [ ] `curl http://<lb>/api/v1/demo/via-sidecar` returns the same rows projected through ADB DB_LINK views.
 - [ ] Browser at `http://<lb>/` renders the versions page; clicking the button populates four cards.
 
 ## Reference repos used as templates

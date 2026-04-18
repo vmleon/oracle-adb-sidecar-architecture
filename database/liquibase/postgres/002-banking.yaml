@@ -1,0 +1,100 @@
+databaseChangeLog:
+  - changeSet:
+      id: postgres-002-create-policies
+      author: adbsidecar
+      changes:
+        - createTable:
+            tableName: policies
+            columns:
+              - column:
+                  name: id
+                  type: INTEGER
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: name
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: description
+                  type: TEXT
+
+  - changeSet:
+      id: postgres-002-create-rules
+      author: adbsidecar
+      changes:
+        - createTable:
+            tableName: rules
+            columns:
+              - column:
+                  name: id
+                  type: INTEGER
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: policy_id
+                  type: INTEGER
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_rules_policy
+                    references: policies(id)
+              - column:
+                  name: expression
+                  type: VARCHAR(200)
+                  constraints:
+                    nullable: false
+
+  - changeSet:
+      id: postgres-002-seed-policies
+      author: adbsidecar
+      changes:
+        - insert:
+            tableName: policies
+            columns:
+              - { column: { name: id, valueNumeric: 1 } }
+              - { column: { name: name, value: "fraud-monitoring" } }
+              - { column: { name: description, value: "Flag transactions that deviate from account baseline" } }
+        - insert:
+            tableName: policies
+            columns:
+              - { column: { name: id, valueNumeric: 2 } }
+              - { column: { name: name, value: "aml-screening" } }
+              - { column: { name: description, value: "Anti-money-laundering thresholds and watchlists" } }
+
+  - changeSet:
+      id: postgres-002-seed-rules
+      author: adbsidecar
+      changes:
+        - insert:
+            tableName: rules
+            columns:
+              - { column: { name: id, valueNumeric: 1 } }
+              - { column: { name: policy_id, valueNumeric: 1 } }
+              - { column: { name: expression, value: "amount > 5000 AND channel = 'online'" } }
+        - insert:
+            tableName: rules
+            columns:
+              - { column: { name: id, valueNumeric: 2 } }
+              - { column: { name: policy_id, valueNumeric: 1 } }
+              - { column: { name: expression, value: "count_24h > 10" } }
+        - insert:
+            tableName: rules
+            columns:
+              - { column: { name: id, valueNumeric: 3 } }
+              - { column: { name: policy_id, valueNumeric: 2 } }
+              - { column: { name: expression, value: "amount >= 10000" } }
+        - insert:
+            tableName: rules
+            columns:
+              - { column: { name: id, valueNumeric: 4 } }
+              - { column: { name: policy_id, valueNumeric: 2 } }
+              - { column: { name: expression, value: "counterparty IN (SELECT name FROM watchlist)" } }
+        - insert:
+            tableName: rules
+            columns:
+              - { column: { name: id, valueNumeric: 5 } }
+              - { column: { name: policy_id, valueNumeric: 2 } }
+              - { column: { name: expression, value: "country_code IN ('XX','YY','ZZ')" } }

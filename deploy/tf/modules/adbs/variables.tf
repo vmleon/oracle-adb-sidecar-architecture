@@ -33,9 +33,13 @@ variable "autonomous_database_db_license" {
   default = "BRING_YOUR_OWN_LICENSE"
 }
 
-variable "autonomous_database_db_whitelisted_ips" {
+variable "subnet_id" {
+  type = string
+}
+
+variable "nsg_ids" {
   type    = list(string)
-  default = ["0.0.0.0/0"] # POC only — restrict in production
+  default = []
 }
 
 variable "autonomous_database_compute_count" {

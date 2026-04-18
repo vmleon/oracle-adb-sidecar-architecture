@@ -1,5 +1,5 @@
 ---
-- name: Install jump-host tools
+- name: Install jump-host tools + JDK 23 + SQLcl + postgresql client + ncat
   ansible.builtin.dnf:
     name:
       - vim
@@ -7,5 +7,299 @@
       - curl
       - jq
       - tmux
+      - unzip
+      - nmap-ncat
       - oci-utils
+      - jdk-23
+      - sqlcl
+      - postgresql
     update_cache: yes
+
+- name: Add MongoDB 8.0 yum repository (for mongosh)
+  ansible.builtin.yum_repository:
+    name: mongodb-org-8.0
+    description: MongoDB Repository
+    baseurl: https://repo.mongodb.org/yum/redhat/9/mongodb-org/8.0/x86_64/
+    gpgcheck: yes
+    gpgkey: https://pgp.mongodb.com/server-8.0.asc
+    enabled: yes
+
+- name: Install mongosh
+  ansible.builtin.dnf:
+    name: mongodb-mongosh
+    update_cache: yes
+
+- name: Ensure /opt/liquibase exists
+  ansible.builtin.file:
+    path: /opt/liquibase
+    state: directory
+    mode: '0755'
+
+- name: Check if liquibase is already installed
+  ansible.builtin.stat:
+    path: /opt/liquibase/liquibase
+  register: liquibase_bin
+
+- name: Unpack Liquibase 4.29.2 to /opt/liquibase
+  ansible.builtin.unarchive:
+    src: https://github.com/liquibase/liquibase/releases/download/v4.29.2/liquibase-4.29.2.tar.gz
+    dest: /opt/liquibase
+    remote_src: yes
+  when: not liquibase_bin.stat.exists
+
+- name: Symlink liquibase to /usr/local/bin
+  ansible.builtin.file:
+    src: /opt/liquibase/liquibase
+    dest: /usr/local/bin/liquibase
+    state: link
+
+- name: Download Oracle JDBC driver (ojdbc11) into Liquibase lib
+  ansible.builtin.get_url:
+    url: https://repo1.maven.org/maven2/com/oracle/database/jdbc/ojdbc11/23.9.0.25.07/ojdbc11-23.9.0.25.07.jar
+    dest: /opt/liquibase/lib/ojdbc11-23.9.0.25.07.jar
+    mode: '0644'
+
+# Oracle PKI — required to open the SSO wallet (cwallet.sso). Without it
+# ojdbc11 throws "NoSuchAlgorithmException: SSO KeyStore not available" on
+# any thin-driver connection to ADB via wallet. Modern oraclepki (23.x)
+# is self-contained; the legacy osdt_core / osdt_cert companions are not
+# published past 21.21.0.0 on Maven Central and are no longer needed.
+- name: Download Oracle PKI (oraclepki) into Liquibase lib
+  ansible.builtin.get_url:
+    url: https://repo1.maven.org/maven2/com/oracle/database/security/oraclepki/23.9.0.25.07/oraclepki-23.9.0.25.07.jar
+    dest: /opt/liquibase/lib/oraclepki-23.9.0.25.07.jar
+    mode: '0644'
+
+- name: Download PostgreSQL JDBC driver into Liquibase lib
+  ansible.builtin.get_url:
+    url: https://repo1.maven.org/maven2/org/postgresql/postgresql/42.7.4/postgresql-42.7.4.jar
+    dest: /opt/liquibase/lib/postgresql-42.7.4.jar
+    mode: '0644'
+
+# --- Saved client connections (run BEFORE Liquibase so failures in the
+#     database-seeding block don't leave the operator without tools).
+
+- name: Set SQLPATH in .bashrc so SQLcl picks up /home/opc/login.sql
+  ansible.builtin.lineinfile:
+    path: /home/opc/.bashrc
+    line: "export SQLPATH=$HOME"
+    state: present
+  become_user: opc
+
+- name: Add /home/opc/bin to PATH in .bashrc (for db shortcuts)
+  ansible.builtin.lineinfile:
+    path: /home/opc/.bashrc
+    line: 'export PATH="$HOME/bin:$PATH"'
+    state: present
+  become_user: opc
+
+- name: Source /home/opc/endpoints.env from .bashrc (exposes BACK/FRONT/DB)
+  ansible.builtin.lineinfile:
+    path: /home/opc/.bashrc
+    line: '[ -f "$HOME/endpoints.env" ] && . "$HOME/endpoints.env"'
+    state: present
+  become_user: opc
+
+- name: Create /home/opc/bin for shortcut scripts
+  ansible.builtin.file:
+    path: /home/opc/bin
+    state: directory
+    owner: opc
+    group: opc
+    mode: '0755'
+
+- name: Drop login.sql for SQLcl
+  ansible.builtin.copy:
+    dest: /home/opc/login.sql
+    owner: opc
+    group: opc
+    mode: '0640'
+    content: |
+      SET LINESIZE 1000
+      SET LONG 2000
+      SET SERVEROUTPUT ON
+      SET FEEDBACK ON
+
+- name: Render SQLcl connection bootstrap (adb via wallet + orafree via JDBC URL)
+  ansible.builtin.copy:
+    dest: /home/opc/conn.sql
+    owner: opc
+    group: opc
+    mode: '0600'
+    content: |
+      conn -save adb     -replace -cloudconfig /home/opc/wallet.zip -wallet -savepwd -url {{ adb_service_name }}_high -u ADMIN  -password '{{ adb_admin_password }}'
+      conn -save orafree -replace -savepwd -url jdbc:oracle:thin:@//{{ databases_private_ip }}:1521/FREEPDB1 -u SYSTEM -password '{{ oracle_db_password }}'
+      EXIT;
+
+- name: Register SQLcl saved connections (adb, orafree)
+  ansible.builtin.command: sql /nolog @/home/opc/conn.sql
+  become_user: opc
+  register: sqlcl_conn_result
+  changed_when: "'Saved' in sqlcl_conn_result.stdout or 'saved' in sqlcl_conn_result.stdout"
+
+- name: Write .pgpass for the postgres container
+  ansible.builtin.copy:
+    dest: /home/opc/.pgpass
+    owner: opc
+    group: opc
+    mode: '0600'
+    content: |
+      {{ databases_private_ip }}:5432:postgres:postgres:{{ postgres_db_password }}
+
+- name: Install pg shortcut (wraps psql with saved creds)
+  ansible.builtin.copy:
+    dest: /home/opc/bin/pg
+    owner: opc
+    group: opc
+    mode: '0755'
+    content: |
+      #!/bin/bash
+      exec psql -h {{ databases_private_ip }} -p 5432 -U postgres -d postgres "$@"
+
+- name: Install mg shortcut (wraps mongosh with saved URI)
+  ansible.builtin.copy:
+    dest: /home/opc/bin/mg
+    owner: opc
+    group: opc
+    mode: '0700'
+    content: |
+      #!/bin/bash
+      exec mongosh "mongodb://admin:{{ mongo_db_password }}@{{ databases_private_ip }}:27017/admin" "$@"
+
+- name: Install adb shortcut (sql -name adb)
+  ansible.builtin.copy:
+    dest: /home/opc/bin/adb
+    owner: opc
+    group: opc
+    mode: '0755'
+    content: |
+      #!/bin/bash
+      exec sql -name adb "$@"
+
+- name: Install orafree shortcut (sql -name orafree)
+  ansible.builtin.copy:
+    dest: /home/opc/bin/orafree
+    owner: opc
+    group: opc
+    mode: '0755'
+    content: |
+      #!/bin/bash
+      exec sql -name orafree "$@"
+
+# --- Render + run Liquibase against all four engines ---
+
+- name: Render Liquibase properties for ADB
+  ansible.builtin.template:
+    src: "{{ liquibase_adb_dir }}/liquibase.properties.j2"
+    dest: "{{ liquibase_adb_dir }}/liquibase.properties"
+    mode: '0600'
+  vars:
+    admin_password: "{{ adb_admin_password }}"
+
+- name: Render Liquibase properties for Oracle Free
+  ansible.builtin.template:
+    src: "{{ liquibase_oracle_dir }}/liquibase.properties.j2"
+    dest: "{{ liquibase_oracle_dir }}/liquibase.properties"
+    mode: '0600'
+
+- name: Render Liquibase properties for Postgres
+  ansible.builtin.template:
+    src: "{{ liquibase_postgres_dir }}/liquibase.properties.j2"
+    dest: "{{ liquibase_postgres_dir }}/liquibase.properties"
+    mode: '0600'
+
+- name: Wait for Oracle Free 1521 on databases compute
+  ansible.builtin.wait_for:
+    host: "{{ databases_private_ip }}"
+    port: 1521
+    timeout: 600
+
+- name: Wait for Postgres 5432 on databases compute
+  ansible.builtin.wait_for:
+    host: "{{ databases_private_ip }}"
+    port: 5432
+    timeout: 600
+
+- name: Wait for Mongo 27017 on databases compute
+  ansible.builtin.wait_for:
+    host: "{{ databases_private_ip }}"
+    port: 27017
+    timeout: 600
+
+# Listener on 1521 comes up well before the PDB is open — poll Liquibase
+# until it can actually connect and run a query (ORA-01033 goes away).
+- name: Wait for Oracle Free PDB to accept Liquibase queries
+  ansible.builtin.command:
+    cmd: liquibase --defaults-file=liquibase.properties status
+    chdir: "{{ liquibase_oracle_dir }}"
+  register: oracle_ready_check
+  retries: 30
+  delay: 20
+  until: oracle_ready_check.rc == 0
+  changed_when: false
+
+- name: Run Liquibase update against Oracle Free (deployment_marker + banking)
+  ansible.builtin.command:
+    cmd: liquibase --defaults-file=liquibase.properties update
+    chdir: "{{ liquibase_oracle_dir }}"
+  register: oracle_liquibase_result
+  changed_when: "'Update has been successful' in oracle_liquibase_result.stdout"
+
+- name: Run Liquibase update against Postgres (deployment_marker + banking)
+  ansible.builtin.command:
+    cmd: liquibase --defaults-file=liquibase.properties update
+    chdir: "{{ liquibase_postgres_dir }}"
+  register: postgres_liquibase_result
+  changed_when: "'Update has been successful' in postgres_liquibase_result.stdout"
+
+- name: Run mongosh init.js against Mongo (deployment_marker + support_tickets)
+  ansible.builtin.command:
+    cmd: >-
+      mongosh --quiet
+      "mongodb://admin:{{ mongo_db_password }}@{{ databases_private_ip }}:27017/admin"
+      {{ mongo_init_js }}
+  register: mongo_init_result
+  changed_when: "'Mongo init.js complete' in mongo_init_result.stdout"
+  no_log: true
+
+- name: Run Liquibase update against ADB (credentials, DB_LINKs, banking views)
+  ansible.builtin.command:
+    cmd: liquibase --defaults-file=liquibase.properties update
+    chdir: "{{ liquibase_adb_dir }}"
+  register: adb_liquibase_result
+  changed_when: "'Update has been successful' in adb_liquibase_result.stdout"
+
+- name: Capture Liquibase + mongosh output to /home/opc/ops/liquibase.log
+  ansible.builtin.copy:
+    content: |
+      === ORACLE FREE ===
+      STDOUT:
+      {{ oracle_liquibase_result.stdout }}
+
+      STDERR:
+      {{ oracle_liquibase_result.stderr }}
+
+      === POSTGRES ===
+      STDOUT:
+      {{ postgres_liquibase_result.stdout }}
+
+      STDERR:
+      {{ postgres_liquibase_result.stderr }}
+
+      === MONGO ===
+      STDOUT:
+      {{ mongo_init_result.stdout }}
+
+      STDERR:
+      {{ mongo_init_result.stderr }}
+
+      === ADB ===
+      STDOUT:
+      {{ adb_liquibase_result.stdout }}
+
+      STDERR:
+      {{ adb_liquibase_result.stderr }}
+    dest: /home/opc/ops/liquibase.log
+    owner: opc
+    group: opc
+    mode: '0600'

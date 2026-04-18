@@ -98,6 +98,12 @@ resource "oci_core_subnet" "db_subnet" {
   ]
   route_table_id  = oci_core_route_table.route_private.id
   dhcp_options_id = oci_core_virtual_network.vcn.default_dhcp_options_id
+
+  # Force destroy order: this subnet (which holds the ADB private-endpoint
+  # VNIC) must be fully destroyed — OCI blocks that call until the VNIC
+  # is detached — BEFORE the NSG delete is attempted. Otherwise NSG
+  # destroy races the VNIC-detach and hits 412 PreconditionFailed.
+  depends_on = [oci_core_network_security_group.nsg_adb]
 }
 
 resource "oci_core_security_list" "public_http_seclist" {
@@ -208,6 +214,61 @@ resource "oci_core_security_list" "db_seclist" {
     tcp_options {
       min = 27017
       max = 27017
+    }
+  }
+
+  # ADB private endpoint (same subnet) -> container DBs for DB_LINK
+  ingress_security_rules {
+    protocol  = local.tcp
+    source    = local.db_subnet_cidr
+    stateless = false
+    tcp_options {
+      min = 1521
+      max = 1521
+    }
+  }
+  ingress_security_rules {
+    protocol  = local.tcp
+    source    = local.db_subnet_cidr
+    stateless = false
+    tcp_options {
+      min = 5432
+      max = 5432
+    }
+  }
+  ingress_security_rules {
+    protocol  = local.tcp
+    source    = local.db_subnet_cidr
+    stateless = false
+    tcp_options {
+      min = 27017
+      max = 27017
+    }
+  }
+}
+
+resource "oci_core_network_security_group" "nsg_adb" {
+  compartment_id = var.compartment_ocid
+  vcn_id         = oci_core_virtual_network.vcn.id
+  display_name   = "nsg_adb_${local.project_name}_${local.deploy_id}"
+}
+
+resource "oci_core_network_security_group_security_rule" "nsg_adb_ingress_1522" {
+  for_each = {
+    app = oci_core_subnet.app_subnet.cidr_block
+    ops = oci_core_subnet.public_subnet.cidr_block
+  }
+
+  network_security_group_id = oci_core_network_security_group.nsg_adb.id
+  direction                 = "INGRESS"
+  protocol                  = local.tcp
+  source                    = each.value
+  source_type               = "CIDR_BLOCK"
+  stateless                 = false
+  tcp_options {
+    destination_port_range {
+      min = 1522
+      max = 1522
     }
   }
 }

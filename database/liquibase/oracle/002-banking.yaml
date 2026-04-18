@@ -1,0 +1,133 @@
+databaseChangeLog:
+  - changeSet:
+      id: oracle-002-create-accounts
+      author: adbsidecar
+      changes:
+        - createTable:
+            tableName: accounts
+            columns:
+              - column:
+                  name: id
+                  type: NUMBER(10)
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: customer_name
+                  type: VARCHAR2(100)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: balance
+                  type: NUMBER(12,2)
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+
+  - changeSet:
+      id: oracle-002-create-transactions
+      author: adbsidecar
+      changes:
+        - createTable:
+            tableName: transactions
+            columns:
+              - column:
+                  name: id
+                  type: NUMBER(10)
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: account_id
+                  type: NUMBER(10)
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_transactions_account
+                    references: accounts(id)
+              - column:
+                  name: amount
+                  type: NUMBER(12,2)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: tx_date
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+
+  - changeSet:
+      id: oracle-002-seed-accounts
+      author: adbsidecar
+      changes:
+        - insert:
+            tableName: accounts
+            columns:
+              - { column: { name: id, valueNumeric: 1 } }
+              - { column: { name: customer_name, value: "Alice Morgan" } }
+              - { column: { name: balance, valueNumeric: 4250.75 } }
+        - insert:
+            tableName: accounts
+            columns:
+              - { column: { name: id, valueNumeric: 2 } }
+              - { column: { name: customer_name, value: "Bob Chen" } }
+              - { column: { name: balance, valueNumeric: 12890.10 } }
+        - insert:
+            tableName: accounts
+            columns:
+              - { column: { name: id, valueNumeric: 3 } }
+              - { column: { name: customer_name, value: "Carol Diaz" } }
+              - { column: { name: balance, valueNumeric: 875.00 } }
+
+  - changeSet:
+      id: oracle-002-seed-transactions
+      author: adbsidecar
+      changes:
+        - insert:
+            tableName: transactions
+            columns:
+              - { column: { name: id, valueNumeric: 1 } }
+              - { column: { name: account_id, valueNumeric: 1 } }
+              - { column: { name: amount, valueNumeric: -120.50 } }
+        - insert:
+            tableName: transactions
+            columns:
+              - { column: { name: id, valueNumeric: 2 } }
+              - { column: { name: account_id, valueNumeric: 1 } }
+              - { column: { name: amount, valueNumeric: 2000.00 } }
+        - insert:
+            tableName: transactions
+            columns:
+              - { column: { name: id, valueNumeric: 3 } }
+              - { column: { name: account_id, valueNumeric: 2 } }
+              - { column: { name: amount, valueNumeric: -45.00 } }
+        - insert:
+            tableName: transactions
+            columns:
+              - { column: { name: id, valueNumeric: 4 } }
+              - { column: { name: account_id, valueNumeric: 2 } }
+              - { column: { name: amount, valueNumeric: 7500.00 } }
+        - insert:
+            tableName: transactions
+            columns:
+              - { column: { name: id, valueNumeric: 5 } }
+              - { column: { name: account_id, valueNumeric: 2 } }
+              - { column: { name: amount, valueNumeric: -899.99 } }
+        - insert:
+            tableName: transactions
+            columns:
+              - { column: { name: id, valueNumeric: 6 } }
+              - { column: { name: account_id, valueNumeric: 3 } }
+              - { column: { name: amount, valueNumeric: 500.00 } }
+        - insert:
+            tableName: transactions
+            columns:
+              - { column: { name: id, valueNumeric: 7 } }
+              - { column: { name: account_id, valueNumeric: 3 } }
+              - { column: { name: amount, valueNumeric: -32.40 } }
+        - insert:
+            tableName: transactions
+            columns:
+              - { column: { name: id, valueNumeric: 8 } }
+              - { column: { name: account_id, valueNumeric: 1 } }
+              - { column: { name: amount, valueNumeric: -60.00 } }

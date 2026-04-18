@@ -28,12 +28,51 @@ mkdir -p /home/opc/ansible_ops
 unzip /home/opc/ansible_ops.zip -d /home/opc/ansible_ops && rm -f /home/opc/ansible_ops.zip
 chown -R opc:opc /home/opc/ansible_ops
 
+# ADB wallet (base64-encoded zip) — keep the .zip around for SQLcl -cloudconfig
+curl -4 --fail -sS "${wallet_par_full_path}" -o /home/opc/wallet.zip.b64
+base64 -d /home/opc/wallet.zip.b64 > /home/opc/wallet.zip && rm -f /home/opc/wallet.zip.b64
+mkdir -p /home/opc/ops/wallet
+unzip /home/opc/wallet.zip -d /home/opc/ops/wallet
+chown opc:opc /home/opc/wallet.zip
+chmod 0600 /home/opc/wallet.zip
+chown -R opc:opc /home/opc/ops/wallet
+
+# Database schema bundle (adb / oracle / postgres liquibase + mongo init.js)
+curl -4 --fail -sS "${database_par_full_path}" -o /home/opc/database.zip
+mkdir -p /home/opc/ops/database
+unzip /home/opc/database.zip -d /home/opc/ops/database && rm -f /home/opc/database.zip
+chown -R opc:opc /home/opc/ops/database
+
 cat <<EOT >> /home/opc/ansible_params.json
 {
   "project_name": "${project_name}",
-  "region_name": "${region_name}"
+  "region_name": "${region_name}",
+  "adb_service_name": "${adb_service_name}",
+  "adb_admin_password": "${adb_admin_password}",
+  "oracle_db_password": "${oracle_db_password}",
+  "postgres_db_password": "${postgres_db_password}",
+  "mongo_db_password": "${mongo_db_password}",
+  "databases_private_ip": "${databases_private_ip}",
+  "back_private_ip": "${back_private_ip}",
+  "front_private_ip": "${front_private_ip}",
+  "wallet_dir": "/home/opc/ops/wallet",
+  "liquibase_adb_dir": "/home/opc/ops/database/liquibase/adb",
+  "liquibase_oracle_dir": "/home/opc/ops/database/liquibase/oracle",
+  "liquibase_postgres_dir": "/home/opc/ops/database/liquibase/postgres",
+  "mongo_init_js": "/home/opc/ops/database/mongo/init.js"
 }
 EOT
+
+# Sourceable endpoint cheat-sheet for interactive shells on ops
+cat <<EOT > /home/opc/endpoints.env
+# Private IPs of the other tiers — curl directly from ops, no jump needed.
+# Example: curl -i http://\$BACK:8080/api/v1/demo
+export BACK=${back_private_ip}
+export FRONT=${front_private_ip}
+export DB=${databases_private_ip}
+EOT
+chown opc:opc /home/opc/endpoints.env
+chmod 0644 /home/opc/endpoints.env
 chown opc:opc /home/opc/ansible_params.json
 chmod 600 /home/opc/ansible_params.json
 

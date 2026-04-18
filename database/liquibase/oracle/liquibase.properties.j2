@@ -1,5 +1,5 @@
 changelogFile=db.changelog-master.yaml
-url=jdbc:oracle:thin:@//{{ databases_host }}:1521/FREEPDB1
+url=jdbc:oracle:thin:@//{{ databases_private_ip }}:1521/FREEPDB1
 username=SYSTEM
-password={{ oracle_password }}
+password={{ oracle_db_password }}
 liquibase.hub.mode=off
