@@ -12,7 +12,7 @@ import { RouterOutlet } from '@angular/router';
       <router-outlet />
     </main>
     <footer>
-      AI sidecar: Autonomous Database 26ai · Production workload (simulated): Oracle Free 26ai / PostgreSQL 18 / MongoDB 8
+      Created by <a href="https://www.linkedin.com/in/victormartindeveloper/" target="_blank" rel="noopener">Victor Martin</a> at Oracle Database EMEA Platform Technology Solutions (2026)
     </footer>
   `,
   styles: `
@@ -39,6 +39,8 @@ import { RouterOutlet } from '@angular/router';
       color: #9B9590;
       font-size: 0.8rem;
     }
+    footer a { color: #E88A7A; text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
   `,
 })
 export class App {}

@@ -20,11 +20,71 @@ Liquibase / `mongosh` on first deploy:
 
 - Oracle Free — `accounts`, `transactions`
 - PostgreSQL — `policies`, `rules`
-- MongoDB — `support_tickets` (in the `admin` database)
+- MongoDB — `support_tickets` (in a dedicated `banking` database — **not**
+  `admin`, see §4 for why)
 
 ADB surfaces each remote table as a view (`V_ACCOUNTS`, `V_TRANSACTIONS`,
 `V_POLICIES`, `V_RULES`, `V_SUPPORT_TICKETS`) so the rest of the stack does
 not care where the data physically lives.
+
+---
+
+## 0. Two hard requirements learned the painful way
+
+Both of these are not in the Oracle error messages as written; you have to
+know to look for them.
+
+### 0.1 `hostname` must be a DNS-resolvable name, not a raw IP
+
+`DBMS_CLOUD_ADMIN.CREATE_DATABASE_LINK` validates its `hostname` argument and
+rejects anything that looks like a raw IPv4 or IPv6 literal:
+
+```
+ORA-20000: Invalid host name 10.0.3.231 specified
+ORA-06512: at "C##CLOUD$SERVICE.DBMS_CLOUD_DBLINK_INTERNAL", ...
+```
+
+This is an ADB-specific guard against link targets being pinned to arbitrary
+IPs. The fix is to pass a hostname the VCN's internal DNS can resolve. In
+this POC the target compute is created with `assign_private_dns_record = true`
+and a `hostname_label`, so OCI registers it in the VCN's private resolver.
+The full form is:
+
+```
+<hostname_label>.<subnet_dns_label>.<vcn_dns_label>.oraclevcn.com
+```
+
+For this project that resolves to e.g.
+`databasesadbsidecarxy.db.vcnadbsidecarxy.oraclevcn.com` (the `xy` is the
+random 2-char deploy ID). Terraform builds this string from locals and
+passes it down as `databases_fqdn`; Liquibase substitutes it into every
+`CREATE_DATABASE_LINK` call via the `${databases_fqdn}` parameter.
+
+ADB's private endpoint lives in the same VCN, so its DNS resolver sees
+the same private record and resolves the FQDN to the target's private IP.
+
+### 0.2 Put MongoDB data outside the `admin` database
+
+Mongo's `admin` database is the auth database — where user accounts live —
+and the DataDirect MongoDB ODBC driver that ADB's heterogeneous gateway
+uses does **not** expose collections stored there through its table
+catalog. Liquibase's `CREATE OR REPLACE VIEW V_SUPPORT_TICKETS` returns:
+
+```
+ORA-28500: connection from ORACLE to a non-Oracle system returned this message:
+[DataDirect][ODBC MongoDB driver][MongoDB]syntax error or access rule violation:
+object not found: support_tickets {42S22, NativeErr = -5501}
+ORA-02063: preceding 2 lines from MONGO_LINK
+```
+
+The collection _physically_ exists — `db.support_tickets.countDocuments({})`
+from `mongosh` returns the expected count — but the gateway can't see it to
+resolve the table reference. Move the collection to a non-`admin` database
+and point `MONGO_LINK`'s `service_name` at that database. Auth still
+happens through the `admin` user; only the query target changes.
+
+Our `init.js` seeds `support_tickets` into the `banking` database, and the
+Liquibase changeset creates `MONGO_LINK` with `service_name => 'banking'`.
 
 ---
 
@@ -61,7 +121,7 @@ Homogeneous Oracle-to-Oracle. No `gateway_params` needed.
 BEGIN
   DBMS_CLOUD_ADMIN.CREATE_DATABASE_LINK(
     db_link_name    => 'ORAFREE_LINK',
-    hostname        => '&databases_private_ip.',
+    hostname        => '&databases_fqdn.',
     port            => 1521,
     service_name    => 'FREEPDB1',
     credential_name => 'ORAFREE_CRED',
@@ -98,7 +158,7 @@ Uses the Oracle-managed heterogeneous gateway. Flip with
 BEGIN
   DBMS_CLOUD_ADMIN.CREATE_DATABASE_LINK(
     db_link_name    => 'PG_LINK',
-    hostname        => '&databases_private_ip.',
+    hostname        => '&databases_fqdn.',
     port            => 5432,
     service_name    => 'postgres',                -- PG database name
     credential_name => 'PG_CRED',
@@ -132,15 +192,25 @@ Docs:
 
 ## 4. ADB → MongoDB 8
 
+> **Status in this POC: blocked by an ADB-side bug. The link is created,
+> but every SELECT through it fails.** See
+> [`ISSUE_ADB_HETEROGENEOUS_MONGODB_OBJECT_NOT_FOUND.md`](./ISSUE_ADB_HETEROGENEOUS_MONGODB_OBJECT_NOT_FOUND.md)
+> for the full reproducer, server-side traces, and the variations we
+> ruled out. The `adb-002-view-support-tickets` Liquibase changeset has
+> been removed; `MONGO_CRED` and `MONGO_LINK` are still created so the
+> path can be re-tested against future ADB releases. The backend's
+> "Via ADB sidecar" endpoint surfaces a static "known limitation" note
+> for MongoDB instead of attempting the doomed query.
+
 Also Oracle-managed heterogeneous, `db_type = 'mongodb'`, port 27017.
 
 ```sql
 BEGIN
   DBMS_CLOUD_ADMIN.CREATE_DATABASE_LINK(
     db_link_name    => 'MONGO_LINK',
-    hostname        => '&databases_private_ip.',
+    hostname        => '&databases_fqdn.',
     port            => 27017,
-    service_name    => 'admin',                   -- auth DB / Mongo database
+    service_name    => 'banking',                 -- target Mongo database (NOT `admin`; see §0.2)
     credential_name => 'MONGO_CRED',
     gateway_params  => JSON_OBJECT('db_type' VALUE 'mongodb'),
     public_link     => FALSE,
@@ -158,9 +228,13 @@ FROM   "support_tickets"@MONGO_LINK
 ORDER BY ticket_id;
 ```
 
-- The container in this POC runs with `MONGO_INITDB_ROOT_USERNAME=admin`; the
-  banking `support_tickets` collection is seeded into the `admin` database by
-  `database/mongo/init.js`, which is exactly what `service_name` points at.
+- The container in this POC runs with `MONGO_INITDB_ROOT_USERNAME=admin`.
+  The root user lives in the `admin` database (Mongo's auth DB) but the
+  `support_tickets` collection is seeded into a separate `banking`
+  database by `database/mongo/init.js`. `service_name => 'banking'` points
+  the link at the data, and the `admin` user authenticates via
+  `MONGO_CRED` regardless — Mongo's auth layer is separate from the
+  query-target database. See §0.2 for why we can't just use `admin`.
 - The gateway presents collections as relational-looking tables. Cast to
   concrete Oracle types so JDBC clients get a stable schema — without the
   `CAST(...)` wrappers column widths can shift between queries.
@@ -236,7 +310,7 @@ databaseChangeLog:
               BEGIN
                 DBMS_CLOUD_ADMIN.CREATE_DATABASE_LINK(
                   db_link_name    => 'ORAFREE_LINK',
-                  hostname        => '${databases_private_ip}',
+                  hostname        => '${databases_fqdn}',
                   port            => 1521,
                   service_name    => 'FREEPDB1',
                   credential_name => 'ORAFREE_CRED',
@@ -250,6 +324,14 @@ databaseChangeLog:
 Repeat for `PG_*` and `MONGO_*` with the relevant `gateway_params`.
 Rollbacks use `DBMS_CLOUD_ADMIN.DROP_DATABASE_LINK` +
 `DBMS_CLOUD.DROP_CREDENTIAL`.
+
+The `${databases_fqdn}` parameter is plumbed end-to-end: Terraform
+(`deploy/tf/app/main.tf`) builds the VCN-internal FQDN from the
+`hostname_label` + subnet + VCN DNS labels and passes it into the ops
+instance's `ansible_params.json`. Ansible renders it into
+`liquibase.properties`, and Liquibase substitutes it into every
+`CREATE_DATABASE_LINK` call at changeset execution time. See §0.1 for
+why a raw IP would be rejected.
 
 ---
 
@@ -266,6 +348,54 @@ Rollbacks use `DBMS_CLOUD_ADMIN.DROP_DATABASE_LINK` +
 - ADB egress IPs are not fixed. Don't pin remote firewalls to a single IP.
 - Verify what sub-keys a given `db_type` accepts before guessing:
   `SELECT * FROM HETEROGENEOUS_CONNECTIVITY_INFO WHERE DATABASE_TYPE='mongodb';`
+
+### Transient JDBC drops mid-Liquibase (`ORA-17008`)
+
+ADB occasionally drops a JDBC session in the middle of a long Liquibase
+run:
+
+```
+ERROR: Exception Primary Reason: ORA-17008: Closed connection
+Unexpected error running Liquibase: ORA-17008: Closed connection
+```
+
+Symptoms, what to check, and how to recover:
+
+- **What happened**: a changeset mid-list ran its DDL (which auto-commits
+  in Oracle), but the subsequent `INSERT` into `DATABASECHANGELOG` — the
+  tracking table Liquibase uses to remember which changesets have already
+  run — never made it before the session died. You end up with a real
+  object (a view, say) that Liquibase doesn't think exists.
+- **Side effect**: Liquibase also holds a row in `DATABASECHANGELOGLOCK`
+  for the duration of its run, and that row was not released. The next
+  run aborts with `Could not acquire change log lock. Currently locked
+by <host> since <time>`.
+- **Recovery**:
+
+  ```bash
+  cd /home/opc/ops/database/liquibase/adb
+  sudo /usr/local/bin/liquibase --defaults-file=liquibase.properties releaseLocks
+  sudo /usr/local/bin/liquibase --defaults-file=liquibase.properties update
+  ```
+
+  `releaseLocks` clears the stale `DATABASECHANGELOGLOCK` row; `update`
+  picks up from the first changeset that isn't in `DATABASECHANGELOG`.
+  All DDL in our changesets uses `CREATE OR REPLACE`, so re-running
+  the "already actually applied" changeset is a no-op.
+
+This is why every changeset in `002-db-links.yaml` uses
+`CREATE OR REPLACE VIEW` and the credential/link blocks are idempotent
+on their own terms (`DROP_CREDENTIAL` / `DROP_DATABASE_LINK` rollbacks
+defined) — so a mid-run drop is recoverable without hand-surgery on
+ADB.
+
+### Cross-references to §0
+
+- `ORA-20000: Invalid host name ...` when running the link changeset →
+  you're passing a raw IP, not an FQDN. See §0.1.
+- `ORA-28500 ... [MongoDB] object not found: <collection>` when running
+  the Mongo view changeset → your collection is in the `admin` database.
+  See §0.2.
 
 ---
 

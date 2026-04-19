@@ -78,6 +78,10 @@ variable "databases_private_ip" {
   type = string
 }
 
+variable "databases_fqdn" {
+  type = string
+}
+
 variable "back_private_ip" {
   type = string
 }

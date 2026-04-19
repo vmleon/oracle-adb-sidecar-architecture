@@ -13,6 +13,7 @@ locals {
     postgres_db_password      = var.postgres_db_password
     mongo_db_password         = var.mongo_db_password
     databases_private_ip      = var.databases_private_ip
+    databases_fqdn            = var.databases_fqdn
     back_private_ip           = var.back_private_ip
     front_private_ip          = var.front_private_ip
   })

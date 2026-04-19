@@ -442,18 +442,27 @@ def info():
         sys.exit(1)
 
     ssh_private_key = os.getenv("SSH_PRIVATE_KEY_PATH", "")
-    ssh_cmd = (
-        f"ssh -i {ssh_private_key} opc@{ops_ip}"
+    ssh_ops_cmd = (
+        f"ssh -A -i {ssh_private_key} opc@{ops_ip}"
         if ssh_private_key
-        else f"ssh opc@{ops_ip}"
+        else f"ssh -A opc@{ops_ip}"
     )
+    ssh_add_cmd = f"ssh-add {ssh_private_key}" if ssh_private_key else "ssh-add"
 
     console.print(
         Panel(
             f"Frontend:     http://{lb_ip or 'N/A'}\n"
             f"Demo API:     http://{lb_ip or 'N/A'}/api/v1/demo\n"
             f"Ops bastion:  {ops_ip}\n"
-            f"SSH:          {ssh_cmd}",
+            f"\n"
+            f"SSH to ops (-A forwards your key so ops can jump to private tiers):\n"
+            f"  {ssh_add_cmd}\n"
+            f"  {ssh_ops_cmd}\n"
+            f"\n"
+            f"From ops, the private tiers are pre-exported as $BACK / $FRONT / $DB:\n"
+            f"  ssh opc@$BACK      # Spring Boot\n"
+            f"  ssh opc@$FRONT     # nginx + Angular\n"
+            f"  ssh opc@$DB        # podman host (Oracle / Postgres / Mongo containers)",
             title="Deployment",
         )
     )

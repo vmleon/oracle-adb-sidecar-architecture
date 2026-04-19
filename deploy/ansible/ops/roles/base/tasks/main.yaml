@@ -164,7 +164,7 @@
     mode: '0700'
     content: |
       #!/bin/bash
-      exec mongosh "mongodb://admin:{{ mongo_db_password }}@{{ databases_private_ip }}:27017/admin" "$@"
+      exec mongosh "mongodb://admin:{{ mongo_db_password | urlencode }}@{{ databases_private_ip }}:27017/admin" "$@"
 
 - name: Install adb shortcut (sql -name adb)
   ansible.builtin.copy:
@@ -256,18 +256,35 @@
   ansible.builtin.command:
     cmd: >-
       mongosh --quiet
-      "mongodb://admin:{{ mongo_db_password }}@{{ databases_private_ip }}:27017/admin"
+      "mongodb://admin:{{ mongo_db_password | urlencode }}@{{ databases_private_ip }}:27017/admin"
       {{ mongo_init_js }}
   register: mongo_init_result
   changed_when: "'Mongo init.js complete' in mongo_init_result.stdout"
   no_log: true
 
-- name: Run Liquibase update against ADB (credentials, DB_LINKs, banking views)
-  ansible.builtin.command:
-    cmd: liquibase --defaults-file=liquibase.properties update
-    chdir: "{{ liquibase_adb_dir }}"
-  register: adb_liquibase_result
-  changed_when: "'Update has been successful' in adb_liquibase_result.stdout"
+- name: Run Liquibase update against ADB (credentials, DB_LINKs, banking views) — robust against ORA-17008
+  # ADB occasionally drops the JDBC session mid-Liquibase (ORA-17008). The
+  # dropped run leaves a stale DATABASECHANGELOGLOCK row. `block/rescue`
+  # releases the lock and retries once; all our DDL uses CREATE OR REPLACE
+  # so re-running already-applied changesets is a no-op.
+  block:
+    - name: ADB Liquibase update (first attempt)
+      ansible.builtin.command:
+        cmd: liquibase --defaults-file=liquibase.properties update
+        chdir: "{{ liquibase_adb_dir }}"
+      register: adb_liquibase_result
+      changed_when: "'Update has been successful' in adb_liquibase_result.stdout"
+  rescue:
+    - name: Release stale Liquibase lock (previous ORA-17008 left it held)
+      ansible.builtin.command:
+        cmd: liquibase --defaults-file=liquibase.properties releaseLocks
+        chdir: "{{ liquibase_adb_dir }}"
+    - name: ADB Liquibase update (retry)
+      ansible.builtin.command:
+        cmd: liquibase --defaults-file=liquibase.properties update
+        chdir: "{{ liquibase_adb_dir }}"
+      register: adb_liquibase_result
+      changed_when: "'Update has been successful' in adb_liquibase_result.stdout"
 
 - name: Capture Liquibase + mongosh output to /home/opc/ops/liquibase.log
   ansible.builtin.copy:

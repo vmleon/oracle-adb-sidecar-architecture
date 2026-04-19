@@ -41,6 +41,45 @@ security list already lets ops reach 1521 / 5432 / 27017.
 
 All four shortcuts live in `/home/opc/bin/` and are on PATH via `.bashrc`.
 
+### Raw credentials (when you need to build a URI by hand)
+
+The shortcuts embed the passwords so you never see them. For ad-hoc
+commands (e.g. re-running `init.js`, attaching a GUI client) pull them
+from `/home/opc/ansible_params.json`, which cloud-init wrote with
+mode `0600` from the Terraform variables:
+
+```bash
+jq -r .mongo_db_password    /home/opc/ansible_params.json
+jq -r .postgres_db_password /home/opc/ansible_params.json
+jq -r .oracle_db_password   /home/opc/ansible_params.json   # SYSTEM on Oracle Free
+jq -r .adb_admin_password   /home/opc/ansible_params.json   # ADMIN on ADB sidecar
+```
+
+Mongo connection string, ready to paste into `mongosh`. The password
+often contains `#`, `@`, `/`, etc. — all reserved in a URI — so
+percent-encode it with `jq`'s `@uri` filter before substitution,
+otherwise mongosh errors with `MongoParseError: Password contains
+unescaped characters`:
+
+```bash
+MONGO_PWD=$(jq -r '.mongo_db_password | @uri' /home/opc/ansible_params.json)
+echo "mongodb://admin:${MONGO_PWD}@${DB}:27017/admin"
+
+# e.g. re-seed support_tickets manually
+mongosh "mongodb://admin:${MONGO_PWD}@${DB}:27017/admin" \
+  /home/opc/ops/database/mongo/init.js
+```
+
+For the raw (un-encoded) password — e.g. to paste into a GUI client
+that does its own escaping — drop the `| @uri`:
+
+```bash
+jq -r .mongo_db_password /home/opc/ansible_params.json
+```
+
+You can also just `cat /home/opc/bin/mg` — the password is rendered into
+the wrapper script verbatim.
+
 Quick sanity checks once connected:
 
 ```sql

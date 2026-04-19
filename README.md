@@ -155,14 +155,28 @@ python manage.py info
 
 ## Verifying
 
-```bash
-# After terraform apply
-python manage.py info
+After `terraform apply`, print the endpoints and SSH command:
 
-# Open the load balancer IP in a browser, or:
+```bash
+python manage.py info
+```
+
+Open the load balancer IP in a browser, or hit the endpoints directly. Health check:
+
+```bash
 curl http://<lb_public_ip>/api/v1/health
-curl http://<lb_public_ip>/api/v1/demo              # direct: backend → each DB
-curl http://<lb_public_ip>/api/v1/demo/via-sidecar  # federated: backend → ADB → DB_LINKs
+```
+
+Direct path — backend opens a connection to each production engine:
+
+```bash
+curl http://<lb_public_ip>/api/v1/demo
+```
+
+Federated path — backend queries ADB, which resolves DB_LINK views to the three engines:
+
+```bash
+curl http://<lb_public_ip>/api/v1/demo/via-sidecar
 ```
 
 The demo endpoint returns the banking dataset grouped by engine:
@@ -189,9 +203,11 @@ the data travels:
 cd deploy/tf/app && terraform destroy
 ```
 
+`manage.py clean` refuses if Terraform state still has resources:
+
 ```bash
 cd ../../..
-python manage.py clean   # refuses if Terraform state still has resources
+python manage.py clean
 ```
 
 ## Reference architectures

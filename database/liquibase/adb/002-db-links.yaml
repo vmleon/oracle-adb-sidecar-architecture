@@ -36,7 +36,7 @@ databaseChangeLog:
               BEGIN
                 DBMS_CLOUD_ADMIN.CREATE_DATABASE_LINK(
                   db_link_name    => 'ORAFREE_LINK',
-                  hostname        => '${databases_private_ip}',
+                  hostname        => '${databases_fqdn}',
                   port            => 1521,
                   service_name    => 'FREEPDB1',
                   ssl_server_cert_dn => NULL,
@@ -124,7 +124,7 @@ databaseChangeLog:
               BEGIN
                 DBMS_CLOUD_ADMIN.CREATE_DATABASE_LINK(
                   db_link_name    => 'PG_LINK',
-                  hostname        => '${databases_private_ip}',
+                  hostname        => '${databases_fqdn}',
                   port            => 5432,
                   service_name    => 'postgres',
                   ssl_server_cert_dn => NULL,
@@ -216,9 +216,9 @@ databaseChangeLog:
               BEGIN
                 DBMS_CLOUD_ADMIN.CREATE_DATABASE_LINK(
                   db_link_name    => 'MONGO_LINK',
-                  hostname        => '${databases_private_ip}',
+                  hostname        => '${databases_fqdn}',
                   port            => 27017,
-                  service_name    => 'admin',
+                  service_name    => 'banking',
                   ssl_server_cert_dn => NULL,
                   credential_name => 'MONGO_CRED',
                   gateway_params  => JSON_OBJECT('db_type' VALUE 'mongodb'),
@@ -235,21 +235,10 @@ databaseChangeLog:
               BEGIN DBMS_CLOUD_ADMIN.DROP_DATABASE_LINK('MONGO_LINK'); END;
               /
 
-  - changeSet:
-      id: adb-002-view-support-tickets
-      author: adbsidecar
-      changes:
-        - sql:
-            endDelimiter: "/"
-            splitStatements: false
-            sql: |
-              CREATE OR REPLACE VIEW V_SUPPORT_TICKETS AS
-              SELECT CAST("ticket_id" AS NUMBER)        AS ticket_id,
-                     CAST("customer"  AS VARCHAR2(100)) AS customer,
-                     CAST("subject"   AS VARCHAR2(200)) AS subject,
-                     CAST("status"    AS VARCHAR2(20))  AS status
-              FROM "support_tickets"@MONGO_LINK
-              /
-      rollback:
-        - sql:
-            sql: DROP VIEW V_SUPPORT_TICKETS
+  # V_SUPPORT_TICKETS is intentionally NOT created.
+  # See docs/ISSUE_ADB_HETEROGENEOUS_MONGODB_OBJECT_NOT_FOUND.md — every
+  # SELECT through MONGO_LINK fails with ORA-28500 "object not found"
+  # inside ADB's managed heterogeneous-gateway / DataDirect ODBC driver,
+  # independent of collection placement, service_name, MongoDB version,
+  # or user role. MONGO_CRED + MONGO_LINK remain above so the
+  # infrastructure stays in place for re-testing after any ADB update.

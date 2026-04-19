@@ -50,7 +50,7 @@ type Entity = {
                     @for (r of rows; track $index) {
                       <tr>
                         @for (h of headersFor(rows); track h) {
-                          <td>{{ cell(r, h) }}</td>
+                          <td [class]="cellClass(r, h)">{{ cell(r, h) }}</td>
                         }
                       </tr>
                     }
@@ -93,7 +93,7 @@ type Entity = {
                     @for (r of rows; track $index) {
                       <tr>
                         @for (h of headersFor(rows); track h) {
-                          <td>{{ cell(r, h) }}</td>
+                          <td [class]="cellClass(r, h)">{{ cell(r, h) }}</td>
                         }
                       </tr>
                     }
@@ -109,14 +109,14 @@ type Entity = {
     </section>
   `,
   styles: `
-    h2 { font-family: Georgia, serif; margin-bottom: 0.25rem; }
-    .subtitle { color: #9B9590; margin-bottom: 1.25rem; font-size: 0.9rem; line-height: 1.4; }
+    h2 { font-family: Georgia, serif; margin-bottom: 0.25rem; color: #2C2723; }
+    .subtitle { color: #6B6560; margin-bottom: 1.25rem; font-size: 0.9rem; line-height: 1.4; }
     .row { margin-top: 2rem; }
     .row-title {
       font-family: Georgia, serif;
       font-size: 1.1rem;
       margin: 0 0 0.75rem;
-      color: #EAE6E1;
+      color: #2C2723;
     }
     .grid {
       margin-top: 1.5rem;
@@ -125,11 +125,12 @@ type Entity = {
       gap: 1rem;
     }
     .card {
-      background: #2C2723;
-      border: 1px solid #3C3835;
+      background: #FFFFFF;
+      border: 1px solid #E5E0DA;
       border-radius: 8px;
       padding: 1rem;
       overflow-x: auto;
+      box-shadow: 0 1px 2px rgba(44, 39, 35, 0.04);
     }
     .card h4 {
       margin: 0 0 0.5rem;
@@ -142,9 +143,11 @@ type Entity = {
     th, td {
       text-align: left;
       padding: 0.35rem 0.5rem;
-      border-bottom: 1px solid #3C3835;
+      border-bottom: 1px solid #E5E0DA;
     }
-    th { color: #9B9590; font-weight: normal; text-transform: uppercase; font-size: 0.7rem; }
+    th { color: #6B6560; font-weight: normal; text-transform: uppercase; font-size: 0.7rem; }
+    td.amount-neg { color: #C74634; font-variant-numeric: tabular-nums; }
+    td.amount-pos { color: #1A7F3C; font-variant-numeric: tabular-nums; }
     .error { color: #C74634; margin-top: 1rem; font-size: 0.85rem; }
   `,
 })
@@ -190,7 +193,30 @@ export class VersionsComponent {
     const v = row[header];
     if (v == null) return '';
     if (typeof v === 'object') return JSON.stringify(v);
+    if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(v)) {
+      return this.formatDate(v);
+    }
     return String(v);
+  }
+
+  cellClass(row: Row, header: string): string {
+    if (header.toLowerCase() !== 'amount') return '';
+    const v = row[header];
+    const n = typeof v === 'number' ? v : parseFloat(String(v));
+    if (isNaN(n)) return '';
+    return n < 0 ? 'amount-neg' : n > 0 ? 'amount-pos' : '';
+  }
+
+  private formatDate(iso: string): string {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    const date = d.toLocaleDateString('en-US', {
+      month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC',
+    });
+    const time = d.toLocaleTimeString('en-US', {
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZone: 'UTC',
+    });
+    return `${date} · ${time}`;
   }
 
   load() {

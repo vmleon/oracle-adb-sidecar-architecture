@@ -14,10 +14,12 @@ target.deployment_marker.insertOne({
 
 print('Mongo init.js complete. Collection: adbsidecar.deployment_marker');
 
-// Banking demo collection in the `admin` database — matches MONGO_LINK's
-// service_name so the ADB sidecar can reach it via V_SUPPORT_TICKETS.
+// Banking demo collection in a dedicated `banking` database — matches
+// MONGO_LINK's service_name. We avoid Mongo's `admin` database because
+// the DataDirect MongoDB ODBC driver (used by ADB's heterogeneous
+// gateway) won't surface collections there for DB_LINK catalog lookups.
 
-const bank = db.getSiblingDB('admin');
+const bank = db.getSiblingDB('banking');
 bank.createCollection('support_tickets');
 
 if (bank.support_tickets.countDocuments({}) === 0) {
@@ -53,4 +55,4 @@ if (bank.support_tickets.countDocuments({}) === 0) {
   ]);
 }
 
-print('Mongo init.js complete. Collection: admin.support_tickets');
+print('Mongo init.js complete. Collection: banking.support_tickets');

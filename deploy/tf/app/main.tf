@@ -105,6 +105,7 @@ module "ops" {
   postgres_db_password               = var.postgres_db_password
   mongo_db_password                  = var.mongo_db_password
   databases_private_ip               = module.databases.private_ip
+  databases_fqdn                     = "databases${local.project_name}${local.deploy_id}.db.vcn${local.project_name}${local.deploy_id}.oraclevcn.com"
   back_private_ip                    = module.back.private_ip
   front_private_ip                   = module.front.private_ip
 }

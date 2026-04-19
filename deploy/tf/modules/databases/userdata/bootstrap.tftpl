@@ -18,6 +18,19 @@ wait_for_dns() {
 }
 wait_for_dns
 
+wait_for_rpm_lock() {
+  local -i tries=0 max=60
+  while fuser /var/lib/rpm/.rpm.lock /var/lib/dnf/lock >/dev/null 2>&1; do
+    tries=$((tries+1))
+    if [ $tries -ge $max ]; then
+      echo "FATAL: rpm/dnf lock busy after $((max*5))s" >&2
+      exit 1
+    fi
+    sleep 5
+  done
+}
+wait_for_rpm_lock
+
 dnf upgrade -y
 dnf install oracle-epel-release-el9 -y
 dnf install ansible-core -y

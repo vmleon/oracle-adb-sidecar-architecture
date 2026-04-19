@@ -91,13 +91,17 @@ public class VersionsController {
     }
 
     private Map<String, Object> mongoSectionViaSidecar() {
+        // V_SUPPORT_TICKETS is intentionally not created in ADB — every SELECT
+        // through MONGO_LINK fails inside ADB's managed heterogeneous gateway
+        // (DataDirect MongoDB ODBC driver) regardless of collection placement,
+        // service_name, or MongoDB version. See
+        // docs/ISSUE_ADB_HETEROGENEOUS_MONGODB_OBJECT_NOT_FOUND.md.
         Map<String, Object> out = new LinkedHashMap<>();
-        try {
-            out.put("support_tickets", adbJdbc.queryForList(
-                    "SELECT ticket_id, customer, subject, status FROM V_SUPPORT_TICKETS ORDER BY ticket_id"));
-        } catch (Exception e) {
-            out.put("error", e.getMessage());
-        }
+        out.put("error",
+                "ADB heterogeneous MongoDB gateway returns "
+                + "\"object not found\" for every collection via @MONGO_LINK. "
+                + "Bug logged — see docs/ISSUE_ADB_HETEROGENEOUS_MONGODB_OBJECT_NOT_FOUND.md. "
+                + "The Direct path (backend → MongoDB) works; only the sidecar view is blocked.");
         return out;
     }
 

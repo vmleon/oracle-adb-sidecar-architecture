@@ -1,5 +1,32 @@
 - name: Front
   hosts: front
   become: true
+  pre_tasks:
+    - name: Stop + disable dnf-makecache.timer during provisioning (prevents RPM lock race)
+      ansible.builtin.systemd:
+        name: dnf-makecache.timer
+        state: stopped
+        enabled: no
+      failed_when: false
+    - name: Stop any in-flight dnf-makecache.service
+      ansible.builtin.systemd:
+        name: dnf-makecache.service
+        state: stopped
+      failed_when: false
+    - name: Wait for RPM/DNF locks to clear (up to 5 min)
+      ansible.builtin.shell: |
+        for i in $(seq 1 60); do
+          fuser /var/lib/rpm/.rpm.lock /var/lib/dnf/lock >/dev/null 2>&1 || exit 0
+          sleep 5
+        done
+        echo "FATAL: rpm/dnf lock busy after 5 min" >&2
+        exit 1
+      changed_when: false
   roles:
     - app
+  post_tasks:
+    - name: Re-enable dnf-makecache.timer for ongoing metadata refresh
+      ansible.builtin.systemd:
+        name: dnf-makecache.timer
+        state: started
+        enabled: yes

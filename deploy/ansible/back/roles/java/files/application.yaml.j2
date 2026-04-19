@@ -7,7 +7,7 @@ spring:
     exclude: org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
   data:
     mongodb:
-      uri: mongodb://admin:{{ mongo_db_password }}@{{ databases_private_ip }}:27017/admin
+      uri: mongodb://admin:{{ mongo_db_password | urlencode }}@{{ databases_private_ip }}:27017/banking?authSource=admin
 server:
   port: 8080
 datasources:
