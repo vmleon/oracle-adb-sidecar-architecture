@@ -10,6 +10,7 @@ databaseChangeLog:
             splitStatements: false
             sql: |
               BEGIN
+                BEGIN DBMS_CLOUD.DROP_CREDENTIAL('ORAFREE_CRED'); EXCEPTION WHEN OTHERS THEN NULL; END;
                 DBMS_CLOUD.CREATE_CREDENTIAL(
                   credential_name => 'ORAFREE_CRED',
                   username        => 'SYSTEM',
@@ -34,6 +35,7 @@ databaseChangeLog:
             splitStatements: false
             sql: |
               BEGIN
+                BEGIN DBMS_CLOUD_ADMIN.DROP_DATABASE_LINK('ORAFREE_LINK'); EXCEPTION WHEN OTHERS THEN NULL; END;
                 DBMS_CLOUD_ADMIN.CREATE_DATABASE_LINK(
                   db_link_name    => 'ORAFREE_LINK',
                   hostname        => '${databases_fqdn}',
@@ -98,6 +100,7 @@ databaseChangeLog:
             splitStatements: false
             sql: |
               BEGIN
+                BEGIN DBMS_CLOUD.DROP_CREDENTIAL('PG_CRED'); EXCEPTION WHEN OTHERS THEN NULL; END;
                 DBMS_CLOUD.CREATE_CREDENTIAL(
                   credential_name => 'PG_CRED',
                   username        => 'postgres',
@@ -122,6 +125,7 @@ databaseChangeLog:
             splitStatements: false
             sql: |
               BEGIN
+                BEGIN DBMS_CLOUD_ADMIN.DROP_DATABASE_LINK('PG_LINK'); EXCEPTION WHEN OTHERS THEN NULL; END;
                 DBMS_CLOUD_ADMIN.CREATE_DATABASE_LINK(
                   db_link_name    => 'PG_LINK',
                   hostname        => '${databases_fqdn}',
@@ -143,6 +147,13 @@ databaseChangeLog:
               BEGIN DBMS_CLOUD_ADMIN.DROP_DATABASE_LINK('PG_LINK'); END;
               /
 
+  # The heterogeneous gateway's DataDirect driver qualifies table probes with
+  # the link *username* as the schema (e.g. `postgres.policies` when the link
+  # user is `postgres`). The banking tables live in `public`, so the probe
+  # fails with "relation does not exist", poisons the PG session transaction,
+  # and every subsequent statement errors with "current transaction is
+  # aborted". Schema-qualify to `"public"."<table>"` so the probe targets
+  # the real location. See docs/FEDERATED_QUERIES.md §3.
   - changeSet:
       id: adb-002-view-policies
       author: adbsidecar
@@ -155,7 +166,7 @@ databaseChangeLog:
               SELECT "id" AS id,
                      "name" AS name,
                      "description" AS description
-              FROM "policies"@PG_LINK
+              FROM "public"."policies"@PG_LINK
               /
       rollback:
         - sql:
@@ -173,7 +184,7 @@ databaseChangeLog:
               SELECT "id" AS id,
                      "policy_id" AS policy_id,
                      "expression" AS expression
-              FROM "rules"@PG_LINK
+              FROM "public"."rules"@PG_LINK
               /
       rollback:
         - sql:
@@ -190,6 +201,7 @@ databaseChangeLog:
             splitStatements: false
             sql: |
               BEGIN
+                BEGIN DBMS_CLOUD.DROP_CREDENTIAL('MONGO_CRED'); EXCEPTION WHEN OTHERS THEN NULL; END;
                 DBMS_CLOUD.CREATE_CREDENTIAL(
                   credential_name => 'MONGO_CRED',
                   username        => 'admin',
@@ -214,6 +226,7 @@ databaseChangeLog:
             splitStatements: false
             sql: |
               BEGIN
+                BEGIN DBMS_CLOUD_ADMIN.DROP_DATABASE_LINK('MONGO_LINK'); EXCEPTION WHEN OTHERS THEN NULL; END;
                 DBMS_CLOUD_ADMIN.CREATE_DATABASE_LINK(
                   db_link_name    => 'MONGO_LINK',
                   hostname        => '${databases_fqdn}',
