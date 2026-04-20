@@ -96,11 +96,7 @@ public class VersionsController {
         // (DataDirect MongoDB ODBC driver) regardless of collection placement,
         // service_name, or MongoDB version. See
         // docs/ISSUE_ADB_HETEROGENEOUS_MONGODB_OBJECT_NOT_FOUND.md.
-        return Map.of("error",
-                "ADB heterogeneous MongoDB gateway returns "
-                + "\"object not found\" for every collection via @MONGO_LINK. "
-                + "Bug logged — see docs/ISSUE_ADB_HETEROGENEOUS_MONGODB_OBJECT_NOT_FOUND.md. "
-                + "The Direct path (backend → MongoDB) works; only the sidecar view is blocked.");
+        return Map.of("error", "Not Implemented Yet");
     }
 
     private Map<String, Object> section(
