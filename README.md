@@ -208,12 +208,8 @@ cd ../../..
 python manage.py clean
 ```
 
-## Reference architectures
+## More info
 
-The project's structure was derived from three sibling repos in the workspace:
-
-- `oracle-database-select-ai` — manage.py + Terraform + Ansible + Spring Boot + Angular layout
-- `oracle-database-mcp-intro` — Liquibase invocation patterns + dual local/cloud lifecycle
-- `oracle-database-java-agent-memory` — cloud-init + PAR-based artifact delivery
-
-See [NOTES.md](NOTES.md) for what's intentionally deferred and the iteration roadmap.
+- [docs/FEDERATED_QUERIES.md](docs/FEDERATED_QUERIES.md) — the deep dive on how ADB reaches Oracle Free / Postgres / Mongo through `DBMS_CLOUD_ADMIN.CREATE_DATABASE_LINK`, with the two hard requirements (DNS-resolvable hostname, Mongo data outside `admin`) and the `ORA-17008` mid-run recovery path.
+- [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) — day-two playbook for each tier (ops, databases, back, front) plus how to poke at each database from the ops bastion.
+- [NOTES.md](NOTES.md) — what's intentionally deferred and the iteration roadmap.
