@@ -5,3 +5,6 @@ databaseChangeLog:
   - include:
       file: 002-db-links.yaml
       relativeToChangelogFile: true
+  - include:
+      file: 003-measurements.yaml
+      relativeToChangelogFile: true

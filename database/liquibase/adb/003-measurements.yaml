@@ -1,0 +1,36 @@
+databaseChangeLog:
+  - changeSet:
+      id: adb-003-table-measurements
+      author: adbsidecar
+      changes:
+        - sql:
+            endDelimiter: "/"
+            splitStatements: false
+            sql: |
+              CREATE TABLE query_measurements (
+                id              NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                query_id        VARCHAR2(64)  NOT NULL,
+                route           VARCHAR2(16)  NOT NULL,
+                elapsed_ms      NUMBER(10,3)  NOT NULL,
+                rows_returned   NUMBER        NOT NULL,
+                success         NUMBER(1)     NOT NULL,
+                error_class     VARCHAR2(128),
+                measured_at     TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL,
+                run_id          VARCHAR2(36)  NOT NULL,
+                CONSTRAINT qm_route_ck   CHECK (route IN ('direct','federated')),
+                CONSTRAINT qm_success_ck CHECK (success IN (0,1))
+              )
+              /
+      rollback:
+        - sql:
+            sql: DROP TABLE query_measurements
+
+  - changeSet:
+      id: adb-003-index-measurements
+      author: adbsidecar
+      changes:
+        - sql:
+            sql: CREATE INDEX qm_lookup_ix ON query_measurements (query_id, route, measured_at DESC)
+      rollback:
+        - sql:
+            sql: DROP INDEX qm_lookup_ix
