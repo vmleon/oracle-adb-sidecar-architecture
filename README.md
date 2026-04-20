@@ -177,38 +177,11 @@ After `terraform apply`, print the endpoints and SSH command:
 python manage.py info
 ```
 
-Open the load balancer IP in a browser, or hit the endpoints directly. Health check:
+Open the load balancer IP in a browser and click through `/app`, `/sidecar`, and `/measurements`. The backend health check, for quick sanity:
 
 ```bash
 curl http://<lb_public_ip>/api/v1/health
 ```
-
-Direct path — backend queries each production engine directly:
-
-```bash
-RUN=$(uuidgen)
-for t in accounts transactions policies rules support_tickets; do
-  curl -s "http://<lb_public_ip>/api/v1/query?table=$t&route=direct&runId=$RUN"
-done
-```
-
-Federated path — backend queries ADB, which resolves DB_LINK views to the engines:
-
-```bash
-RUN=$(uuidgen)
-for t in accounts transactions policies rules; do
-  curl -s "http://<lb_public_ip>/api/v1/query?table=$t&route=federated&runId=$RUN"
-done
-```
-
-Aggregated measurements:
-
-```bash
-curl -s "http://<lb_public_ip>/api/v1/measurements"
-curl -s "http://<lb_public_ip>/api/v1/measurements?trim=iqr"
-```
-
-Each response is `{ rows: [...], rowsReturned: N, elapsedMs: <number> }`. The UI splits these across per-table cards at `/app` and `/sidecar`, each with a ms badge next to the table header.
 
 ## Measuring the federated tax
 
