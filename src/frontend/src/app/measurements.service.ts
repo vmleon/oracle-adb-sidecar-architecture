@@ -2,6 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable, forkJoin } from 'rxjs';
 import { QueryService, Route, Table } from './query.service';
+import { randomUuid } from './uuid';
 
 export interface Aggregate {
   queryId: string;
@@ -54,7 +55,7 @@ export class MeasurementsService {
   triggerRounds(n: number): Observable<unknown[]> {
     const requests = [] as Observable<unknown>[];
     for (let i = 0; i < n; i++) {
-      const runId = crypto.randomUUID();
+      const runId = randomUuid();
       for (const c of COMBOS) {
         requests.push(this.query.run(c.table, c.route, runId));
       }

@@ -1,6 +1,7 @@
 import { Component, signal } from '@angular/core';
 import { CardComponent, CardState } from '../card/card.component';
 import { QueryService, Table } from '../query.service';
+import { randomUuid } from '../uuid';
 
 interface Entry {
   label: string;
@@ -63,7 +64,7 @@ export class SidecarPageComponent {
   ];
 
   loadAll(): void {
-    const runId = crypto.randomUUID();
+    const runId = randomUuid();
     const live = this.entries.filter((e) => !e.skip);
     this.busy.set(true);
     let remaining = live.length;

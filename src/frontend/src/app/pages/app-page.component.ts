@@ -1,6 +1,7 @@
 import { Component, signal } from '@angular/core';
 import { CardComponent, CardState } from '../card/card.component';
 import { QueryService, Table } from '../query.service';
+import { randomUuid } from '../uuid';
 
 interface Entry {
   label: string;
@@ -54,7 +55,7 @@ export class AppPageComponent {
   ];
 
   loadAll(): void {
-    const runId = crypto.randomUUID();
+    const runId = randomUuid();
     this.busy.set(true);
     let remaining = this.entries.length;
     for (const e of this.entries) {
