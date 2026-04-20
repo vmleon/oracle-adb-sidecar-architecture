@@ -11,6 +11,18 @@ The frontend ships four routes against a small banking demo dataset seeded on fi
 - `/future` — **AI features.** Placeholder for Select AI Agents and other 26ai capabilities that land next.
 - `/measurements` — **direct vs federated dashboard.** Wall-clock timing for every query, persisted asynchronously to ADB, with summary stats and box plots so the "federated is slower — by how much?" question has a data answer.
 
+### `/app` — direct
+
+![Current app screenshot](images/current-app.png)
+
+Five cards, one per table (accounts, transactions, policies, rules, support_tickets), each with a wall-clock badge measured at the backend boundary. One click fans out into five parallel HTTP requests and each card fills in independently as its response returns.
+
+### `/sidecar` — federated via ADB
+
+![ADB sidecar screenshot](images/federated.png)
+
+Same five cards, same dataset, but every query is now routed through the ADB sidecar and its DB_LINK views. The numbers next to each card show the extra latency the federated hop costs (compare with `/app` side by side). The `support_tickets` card is statically marked "not available" — the ADB heterogeneous MongoDB gateway is broken.
+
 ## Architecture
 
 | Tier                            | Component                                 | Subnet                   | Notes                                                                                |
@@ -206,7 +218,9 @@ Customers asked first about the ADB sidecar architecture typically ask: _how muc
 
 **Where it lives.** Rows are persisted to `QUERY_MEASUREMENTS` in ADB. Each row carries `query_id`, `route` (`direct` | `federated`), `elapsed_ms`, `rows_returned`, `success`, `run_id`, and `measured_at`.
 
-**How to read the dashboard.** The summary table shows count, mean, and p95 for both routes side by side per query, sorted by the federated-vs-direct delta. The box plots show the distribution shape; the time-series scatter colors points by `run_id` so warm-up runs stand out. Toggle "Trim outliers (IQR)" to strip points outside `[Q1 − 1.5·IQR, Q3 + 1.5·IQR]` before computing the summary.
+**How to read the dashboard.** The summary table shows `n`, mean, and p95 for both routes side by side per query, with a shaded `N` column marking the start of each section. The rightmost `Δ mean (ms)` column is `federated_mean − direct_mean` in absolute ms. Below the table, box plots show the distribution shape for each query. "Trim outliers (IQR)" is on by default and strips points outside `[Q1 − 1.5·IQR, Q3 + 1.5·IQR]` — without it, rare warm-up runs in the 5000-7000 ms range dominate the Y axis and the boxes collapse to flat lines. Toggle it off if you want to see those outliers.
+
+![Measurements dashboard screenshot](images/measurements.png)
 
 ## Cleanup
 
