@@ -1,12 +1,15 @@
 # Oracle ADB 26ai Sidecar Architecture
 
-A **stepping-stone pattern** for bringing Autonomous Database 26ai capabilities — Vector Search, Hybrid Vector Index, Select AI, and the rest of the 26ai feature set — to workloads that still live in older Oracle, PostgreSQL, and MongoDB deployments.
+**Keep your current app. Keep your current databases and their lifecycle. Attach Autonomous Database 26ai as a sidecar, layer AI features on top, and consolidate datasources on your own schedule.**
 
-In this architecture **ADB 26ai is the sidecar**. It does _not_ host the production data. The three Podman containers on the `databases` compute (Oracle Database Free 26ai, PostgreSQL 18, MongoDB 8) stand in for the existing production databases that a typical enterprise already runs. ADB 26ai is attached alongside them and reaches into each one via DB_LINK and federated queries, layering 26ai's modern AI/analytics capabilities on top — so teams can adopt Vector Search, Select AI, etc. without rehosting or rewriting the production systems first.
+This repo is a working implementation of the stepping-stone pattern. Three Podman containers on the `databases` compute (Oracle Database Free 26ai, PostgreSQL 18, MongoDB 8) stand in for the kind of production databases an enterprise already runs. ADB 26ai is attached alongside them as the _sidecar_ — not the production store. It reaches into each engine via DB_LINK views, letting teams adopt Vector Search, Hybrid Vector Index, Select AI Agents, and the rest of 26ai's feature set over the same data without rehosting or rewriting.
 
-This unlocks an incremental modernization path: keep the existing production databases running unchanged, use the ADB 26ai sidecar to power new AI features against the same data, and migrate workloads into ADB 26ai on your own schedule.
+The frontend ships four routes against a small banking demo dataset seeded on first deploy: **accounts + transactions** in Oracle Free, **policies + rules** in PostgreSQL, **support_tickets** in MongoDB.
 
-The frontend ships two buttons against a small banking demo dataset seeded on first deploy: **accounts + transactions** in Oracle Free, **policies + rules** in PostgreSQL, **support_tickets** in MongoDB. The first button reads each database directly from the Spring Boot backend (smoke test that every datasource is reachable). The second asks the ADB 26ai sidecar to project the same data through DB_LINK views (`V_ACCOUNTS`, `V_TRANSACTIONS`, `V_POLICIES`, `V_RULES`, `V_SUPPORT_TICKETS`) — proving the federated path end-to-end. Subsequent iterations build richer 26ai features (Vector Search, Select AI) on top of those same views.
+- `/app` — **current app path.** The backend opens direct JDBC/Mongo connections to each production database. Proves every datasource is reachable; this is what your app already does today.
+- `/sidecar` — **sidecar path.** The backend queries ADB; ADB resolves `V_ACCOUNTS`, `V_TRANSACTIONS`, `V_POLICIES`, `V_RULES` over DB_LINK. Proves the federated path end-to-end. (Mongo via sidecar is deliberately disabled; see [docs/ISSUE_ADB_HETEROGENEOUS_MONGODB_OBJECT_NOT_FOUND.md](docs/ISSUE_ADB_HETEROGENEOUS_MONGODB_OBJECT_NOT_FOUND.md).)
+- `/future` — **AI features.** Placeholder for Select AI Agents and other 26ai capabilities that land next.
+- `/measurements` — **direct vs federated dashboard.** Wall-clock timing for every query, persisted asynchronously to ADB, with summary stats and box plots so the "federated is slower — by how much?" question has a data answer.
 
 ## Architecture
 
@@ -29,7 +32,7 @@ flowchart TB
     end
 
     subgraph appnet [App subnet 10.0.2.0/24]
-        front[Front<br/>nginx + Angular 21]
+        front["Front · nginx + Angular 21<br/>/app · /sidecar · /future · /measurements"]
         back[Back<br/>Spring Boot 3.5 / Java 23]
     end
 
@@ -41,7 +44,7 @@ flowchart TB
         end
     end
 
-    adb[(Autonomous Database 26ai<br/><b>AI sidecar</b> · Vector · Select AI)]
+    adb[(Autonomous Database 26ai<br/><b>AI sidecar</b> · Vector · Select AI<br/>query_measurements)]
 
     internet --> lb
     internet --> ops
@@ -52,7 +55,8 @@ flowchart TB
     back --> oracle
     back --> postgres
     back --> mongo
-    adb -.->|DB_LINK / federated queries<br/>future iterations| databases
+    adb -->|DB_LINK V_* views| oracle
+    adb -->|DB_LINK V_* views| postgres
 ```
 
 ## Layout
@@ -167,35 +171,42 @@ Open the load balancer IP in a browser, or hit the endpoints directly. Health ch
 curl http://<lb_public_ip>/api/v1/health
 ```
 
-Direct path — backend opens a connection to each production engine:
+Direct path — backend queries each production engine directly:
 
 ```bash
-curl http://<lb_public_ip>/api/v1/demo
+RUN=$(uuidgen)
+for t in accounts transactions policies rules support_tickets; do
+  curl -s "http://<lb_public_ip>/api/v1/query?table=$t&route=direct&runId=$RUN"
+done
 ```
 
-Federated path — backend queries ADB, which resolves DB_LINK views to the three engines:
+Federated path — backend queries ADB, which resolves DB_LINK views to the engines:
 
 ```bash
-curl http://<lb_public_ip>/api/v1/demo/via-sidecar
+RUN=$(uuidgen)
+for t in accounts transactions policies rules; do
+  curl -s "http://<lb_public_ip>/api/v1/query?table=$t&route=federated&runId=$RUN"
+done
 ```
 
-The demo endpoint returns the banking dataset grouped by engine:
+Aggregated measurements:
 
-```json
-{
-  "oracle":   { "accounts":        [...], "transactions": [...] },
-  "postgres": { "policies":        [...], "rules":        [...] },
-  "mongo":    { "support_tickets": [...] }
-}
+```bash
+curl -s "http://<lb_public_ip>/api/v1/measurements"
+curl -s "http://<lb_public_ip>/api/v1/measurements?trim=iqr"
 ```
 
-Both endpoints return the **same shape** — the only difference is the path
-the data travels:
+Each response is `{ rows: [...], rowsReturned: N, elapsedMs: <number> }`. The UI splits these across per-table cards at `/app` and `/sidecar`, each with a ms badge next to the table header.
 
-- `/demo` — backend opens a JDBC / Mongo connection to each production engine.
-- `/demo/via-sidecar` — backend issues a single JDBC query to ADB, which
-  resolves each view (`V_ACCOUNTS`, `V_TRANSACTIONS`, `V_POLICIES`, `V_RULES`,
-  `V_SUPPORT_TICKETS`) through its DB_LINKs to the three production engines.
+## Measuring the federated tax
+
+Customers asked first about the ADB sidecar architecture typically ask: _how much does the federated path cost in latency?_ The `/measurements` route answers that directly.
+
+**What is timed.** Exactly one JDBC/Mongo call per measurement, at the backend boundary (`System.nanoTime()` immediately before the call, again immediately after). HTTP handling, JSON serialization, and the measurement-row INSERT are all outside the timed region — the INSERT is fired asynchronously on a dedicated executor so it can't pollute the number.
+
+**Where it lives.** Rows are persisted to `QUERY_MEASUREMENTS` in ADB. Each row carries `query_id`, `route` (`direct` | `federated`), `elapsed_ms`, `rows_returned`, `success`, `run_id`, and `measured_at`.
+
+**How to read the dashboard.** The summary table shows count, mean, and p95 for both routes side by side per query, sorted by the federated-vs-direct delta. The box plots show the distribution shape; the time-series scatter colors points by `run_id` so warm-up runs stand out. Toggle "Trim outliers (IQR)" to strip points outside `[Q1 − 1.5·IQR, Q3 + 1.5·IQR]` before computing the summary.
 
 ## Cleanup
 
