@@ -73,29 +73,25 @@ function iqrTrim(values: number[]): number[] {
           <th colspan="3">Direct</th>
           <th colspan="3">Federated</th>
           <th>Δ mean (ms)</th>
-          <th>Δ mean (%)</th>
         </tr>
         <tr class="sub">
           <th></th>
-          <th>n</th><th>mean</th><th>p95</th>
-          <th>n</th><th>mean</th><th>p95</th>
-          <th></th><th></th>
+          <th class="section">n</th><th>mean</th><th>p95</th>
+          <th class="section">n</th><th>mean</th><th>p95</th>
+          <th></th>
         </tr>
       </thead>
       <tbody>
         @for (r of summary(); track r.queryId) {
           <tr>
             <td>{{ r.queryId }}</td>
-            <td>{{ r.direct?.count ?? '—' }}</td>
+            <td class="section">{{ r.direct?.count ?? '—' }}</td>
             <td>{{ fmt(r.direct?.mean) }}</td>
             <td>{{ fmt(r.direct?.p95) }}</td>
-            <td>{{ r.federated?.count ?? '—' }}</td>
+            <td class="section">{{ r.federated?.count ?? '—' }}</td>
             <td>{{ fmt(r.federated?.mean) }}</td>
             <td>{{ fmt(r.federated?.p95) }}</td>
             <td [class.pos]="r.deltaMs && r.deltaMs > 0">{{ fmt(r.deltaMs) }}</td>
-            <td [class.pos]="r.deltaPct && r.deltaPct > 0">
-              {{ r.deltaPct == null ? '—' : r.deltaPct.toFixed(1) + '%' }}
-            </td>
           </tr>
         }
       </tbody>
@@ -120,6 +116,7 @@ function iqrTrim(values: number[]): number[] {
     .summary .sub th { font-size: 0.65rem; }
     .summary tbody td:first-child { text-align: left; font-family: monospace; }
     .summary td.pos { color: #C74634; font-variant-numeric: tabular-nums; }
+    .summary .section { background: #F5F2EE; border-left: 1px solid #E5E0DA; }
     .chart-wrap { background: #FFFFFF; border: 1px solid #E5E0DA; border-radius: 8px; padding: 1rem; height: 360px; }
   `,
 })
