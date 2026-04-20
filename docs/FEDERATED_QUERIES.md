@@ -169,14 +169,25 @@ BEGIN
 END;
 /
 
-SELECT "id", "name", "description"           FROM "policies"@PG_LINK ORDER BY "id";
-SELECT "id", "policy_id", "expression"       FROM "rules"@PG_LINK    ORDER BY "id";
+SELECT "id", "name", "description"           FROM "public"."policies"@PG_LINK ORDER BY "id";
+SELECT "id", "policy_id", "expression"       FROM "public"."rules"@PG_LINK    ORDER BY "id";
 ```
 
 - PG identifiers are case-sensitive; quote table and column names.
-- If the gateway requires a schema prefix, use `"public"."policies"@PG_LINK`.
-  The POC ships the unqualified form — adjust in `002-db-links.yaml` if a fresh
-  deploy surfaces a "relation does not exist" error.
+- **Always schema-qualify with `"public"."<table>"`.** The gateway's
+  DataDirect ODBC driver probes every table reference as
+  `<username>.<table>` on the Postgres side — so for link user `postgres`,
+  an unqualified `FROM "policies"@PG_LINK` becomes a metadata lookup for
+  `postgres.policies`, which doesn't exist. Postgres returns `relation
+"postgres.policies" does not exist` inside the driver's open transaction,
+  which **poisons** the session; every subsequent statement in that session
+  returns `current transaction is aborted, commands ignored until end of
+transaction block` (ORA-28500 on the Oracle side). Interactive SQLcl
+  sometimes masks this because DG4ODBC caches "not found" and retries
+  without the probe on the _second_ query in the same session — but fresh
+  JDBC connections (e.g. Spring Boot pool) fail every time. Qualifying
+  with `"public"."policies"` points the probe at the real location and
+  eliminates the poisoned-transaction path.
 - **Query is the first-class operation.** DML works for simple single-row
   inserts/updates. **DDL through the link is not supported.** There is no
   two-phase commit across the gateway, so don't mix Oracle writes with PG

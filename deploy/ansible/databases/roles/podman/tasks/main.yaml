@@ -50,6 +50,14 @@
     - postgres
     - mongo
 
+# Port 1521 opens long before the DB is usable. The only authoritative signal
+# is the container log emitting "DATABASE IS READY TO USE!" — block here so
+# downstream hosts (ops → Liquibase) don't race the PDB lifecycle.
+- name: Wait for Oracle container to report DATABASE IS READY TO USE
+  ansible.builtin.shell: |
+    timeout 900 bash -c "podman logs -f oracle 2>&1 | grep -m 1 'DATABASE IS READY TO USE!'"
+  changed_when: false
+
 - name: Disable firewalld
   ansible.builtin.service:
     name: firewalld

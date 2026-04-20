@@ -127,15 +127,25 @@
     group: opc
     mode: '0600'
     content: |
+      WHENEVER SQLERROR EXIT SQL.SQLCODE
+      WHENEVER OSERROR  EXIT FAILURE
       conn -save adb     -replace -cloudconfig /home/opc/wallet.zip -wallet -savepwd -url {{ adb_service_name }}_high -u ADMIN  -password '{{ adb_admin_password }}'
       conn -save orafree -replace -savepwd -url jdbc:oracle:thin:@//{{ databases_private_ip }}:1521/FREEPDB1 -u SYSTEM -password '{{ oracle_db_password }}'
       EXIT;
 
+# SQLcl on this build ships with a broken JLine (missing jansi/jna natives)
+# that crashes whenever stdin isn't a real TTY. `script -q /dev/null -c ...`
+# wraps the command in a pseudo-TTY so JLine initializes cleanly. Combined
+# with WHENEVER SQLERROR EXIT SQL.SQLCODE in the script above, SQLcl now
+# propagates ORA-* errors as a non-zero rc. `failed_when` also greps the
+# captured output for "ORA-" as a belt-and-suspenders check against silent
+# failures.
 - name: Register SQLcl saved connections (adb, orafree)
-  ansible.builtin.command: sql /nolog @/home/opc/conn.sql
+  ansible.builtin.command: script -q /dev/null -c "sql /nolog @/home/opc/conn.sql"
   become_user: opc
   register: sqlcl_conn_result
   changed_when: "'Saved' in sqlcl_conn_result.stdout or 'saved' in sqlcl_conn_result.stdout"
+  failed_when: sqlcl_conn_result.rc != 0 or 'ORA-' in sqlcl_conn_result.stdout
 
 - name: Write .pgpass for the postgres container
   ansible.builtin.copy:

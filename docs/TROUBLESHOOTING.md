@@ -345,7 +345,7 @@ SELECT db_link, host, created FROM user_db_links;
 
 -- Test each hop
 SELECT COUNT(*) FROM accounts@ORAFREE_LINK;
-SELECT COUNT(*) FROM "policies"@PG_LINK;
+SELECT COUNT(*) FROM "public"."policies"@PG_LINK;
 SELECT COUNT(*) FROM "support_tickets"@MONGO_LINK;
 
 -- Test the wrapper views

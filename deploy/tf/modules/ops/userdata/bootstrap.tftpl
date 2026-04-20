@@ -105,6 +105,14 @@ chown opc:opc /home/opc/ansible-playbook.log
 ANSIBLE_PYTHON_INTERPRETER="/usr/bin/python3" \
     ansible-galaxy collection install ansible.posix | tee -a /home/opc/ansible-playbook.log
 
+# Extra buffer: Oracle Free cold-start can take 5–10 min on the databases host,
+# and its listener accepts on 1521 well before the PDB is usable. Sleeping here
+# gives the databases cloud-init room to reach "DATABASE IS READY TO USE!"
+# before ops tries to run Liquibase.
+echo "Sleeping 180s to let databases cloud-init finish Oracle startup..." \
+    | tee -a /home/opc/ansible-playbook.log
+sleep 180
+
 ANSIBLE_PYTHON_INTERPRETER="/usr/bin/python3" ansible-playbook \
     -i /home/opc/ops.ini \
     --extra-vars "@/home/opc/ansible_params.json" \
