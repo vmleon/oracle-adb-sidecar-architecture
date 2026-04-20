@@ -1,14 +1,16 @@
 import { Component } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
+import { NavComponent } from './nav/nav.component';
 
 @Component({
   selector: 'app-root',
-  imports: [RouterOutlet],
+  imports: [RouterOutlet, NavComponent],
   template: `
     <header>
       <h1><span class="oracle-red">Oracle</span> ADB Sidecar Architecture</h1>
     </header>
     <main>
+      <app-nav />
       <router-outlet />
     </main>
     <footer>

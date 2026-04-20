@@ -1,10 +1,27 @@
 import { Routes } from '@angular/router';
 
 export const routes: Routes = [
-  { path: '', redirectTo: 'demo', pathMatch: 'full' },
+  { path: '', redirectTo: 'app', pathMatch: 'full' },
   {
-    path: 'demo',
+    path: 'app',
     loadComponent: () =>
-      import('./versions/versions.component').then((m) => m.VersionsComponent),
+      import('./pages/app-page.component').then((m) => m.AppPageComponent),
+  },
+  {
+    path: 'sidecar',
+    loadComponent: () =>
+      import('./pages/sidecar-page.component').then((m) => m.SidecarPageComponent),
+  },
+  {
+    path: 'future',
+    loadComponent: () =>
+      import('./pages/future-page.component').then((m) => m.FuturePageComponent),
+  },
+  {
+    path: 'measurements',
+    loadComponent: () =>
+      import('./pages/measurements-page.component').then(
+        (m) => m.MeasurementsPageComponent,
+      ),
   },
 ];
