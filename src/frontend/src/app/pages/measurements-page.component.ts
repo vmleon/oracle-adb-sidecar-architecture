@@ -25,6 +25,23 @@ const QUERY_IDS = [
   'mongo.support_tickets',
 ];
 
+function iqrTrim(values: number[]): number[] {
+  if (values.length < 4) return values;
+  const sorted = [...values].sort((a, b) => a - b);
+  const q = (p: number) => {
+    const idx = (sorted.length - 1) * p;
+    const lo = Math.floor(idx);
+    const hi = Math.ceil(idx);
+    return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo);
+  };
+  const q1 = q(0.25);
+  const q3 = q(0.75);
+  const iqr = q3 - q1;
+  const lo = q1 - 1.5 * iqr;
+  const hi = q3 + 1.5 * iqr;
+  return values.filter((v) => v >= lo && v <= hi);
+}
+
 @Component({
   selector: 'app-measurements-page',
   imports: [FormsModule, BaseChartDirective],
@@ -91,25 +108,6 @@ const QUERY_IDS = [
               [data]="boxData()"
               [options]="boxOptions"></canvas>
     </div>
-
-    <h3>Time series (select a query)</h3>
-    <div class="controls">
-      <select [(ngModel)]="selectedQueryId" (change)="reloadSeries()">
-        @for (q of queryIds; track q) {
-          <option [value]="q">{{ q }}</option>
-        }
-      </select>
-      <select [(ngModel)]="selectedRoute" (change)="reloadSeries()">
-        <option value="direct">direct</option>
-        <option value="federated">federated</option>
-      </select>
-    </div>
-    <div class="chart-wrap">
-      <canvas baseChart
-              [type]="'scatter'"
-              [data]="scatterData()"
-              [options]="scatterOptions"></canvas>
-    </div>
   `,
   styles: `
     h2 { font-family: Georgia, serif; margin-bottom: 0.25rem; color: #2C2723; }
@@ -127,13 +125,10 @@ const QUERY_IDS = [
 })
 export class MeasurementsPageComponent implements OnInit {
   runsToTrigger = 20;
-  trimOn = false;
+  trimOn = true;
   triggering = signal(false);
   aggregates = signal<Aggregate[]>([]);
   points = signal<Record<string, SeriesPoint[]>>({});
-  selectedQueryId = 'oracle.accounts';
-  selectedRoute: Route = 'direct';
-  queryIds = QUERY_IDS;
   boxChartType = 'boxplot' as any;
 
   summary = computed<SummaryRow[]>(() => {
@@ -157,13 +152,18 @@ export class MeasurementsPageComponent implements OnInit {
   boxOptions: ChartConfiguration<'scatter'>['options'] = {
     responsive: true,
     maintainAspectRatio: false,
-    scales: { y: { title: { display: true, text: 'ms' } } },
+    scales: { y: { title: { display: true, text: 'ms' }, beginAtZero: true } },
   };
 
   boxData = computed<ChartData<any>>(() => {
     const series = this.points();
-    const direct = QUERY_IDS.map((q) => (series[`${q}|direct`] ?? []).map((p) => p.elapsedMs));
-    const federated = QUERY_IDS.map((q) => (series[`${q}|federated`] ?? []).map((p) => p.elapsedMs));
+    const trim = this.trimOn ? iqrTrim : (v: number[]) => v;
+    const direct = QUERY_IDS.map((q) =>
+      trim((series[`${q}|direct`] ?? []).map((p) => p.elapsedMs)),
+    );
+    const federated = QUERY_IDS.map((q) =>
+      trim((series[`${q}|federated`] ?? []).map((p) => p.elapsedMs)),
+    );
     return {
       labels: QUERY_IDS,
       datasets: [
@@ -173,37 +173,10 @@ export class MeasurementsPageComponent implements OnInit {
     };
   });
 
-  scatterOptions: ChartConfiguration<'scatter'>['options'] = {
-    responsive: true,
-    maintainAspectRatio: false,
-    scales: {
-      x: { type: 'time', time: { unit: 'minute' }, title: { display: true, text: 'measured_at' } },
-      y: { title: { display: true, text: 'ms' } },
-    },
-  };
-
-  scatterData = computed<ChartData<'scatter'>>(() => {
-    const key = `${this.selectedQueryId}|${this.selectedRoute}`;
-    const pts = this.points()[key] ?? [];
-    const byRun = new Map<string, { x: number; y: number }[]>();
-    for (const p of pts) {
-      const arr = byRun.get(p.runId) ?? [];
-      arr.push({ x: new Date(p.measuredAt).getTime(), y: p.elapsedMs });
-      byRun.set(p.runId, arr);
-    }
-    const datasets = Array.from(byRun.entries()).map(([runId, data], i) => ({
-      label: runId.slice(0, 8),
-      data,
-      backgroundColor: `hsl(${(i * 47) % 360}, 70%, 50%)`,
-    }));
-    return { datasets };
-  });
-
   constructor(private svc: MeasurementsService) {}
 
   ngOnInit(): void {
     this.reload();
-    this.reloadSeries();
   }
 
   reload(): void {
@@ -217,16 +190,6 @@ export class MeasurementsPageComponent implements OnInit {
         });
       }
     }
-  }
-
-  reloadSeries(): void {
-    if (this.selectedQueryId === 'mongo.support_tickets' && this.selectedRoute === 'federated') {
-      this.selectedRoute = 'direct';
-    }
-    this.svc.series(this.selectedQueryId, this.selectedRoute, 200).subscribe((pts) => {
-      const current = this.points();
-      this.points.set({ ...current, [`${this.selectedQueryId}|${this.selectedRoute}`]: pts });
-    });
   }
 
   triggerRuns(): void {
