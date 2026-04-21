@@ -107,14 +107,14 @@ flowchart TB
 python -m venv venv
 ```
 
-```bash
-pip install -r requirements.txt
-```
-
 Activate the virtualenv (every new shell):
 
 ```bash
 source venv/bin/activate
+```
+
+```bash
+pip install -r requirements.txt
 ```
 
 Interactive OCI config (profile, region, compartment, SSH key). Generates an Oracle-compliant DB password. Writes `.env`.
