@@ -15,7 +15,7 @@
     mode: '0770'
   loop:
     - { path: /data/oracle,   owner: 54321 }
-    - { path: /data/postgres, owner: 999 }
+    - { path: /data/postgres, owner: 70 }
     - { path: /data/mongo,    owner: 999 }
 
 - name: Render Oracle container systemd unit

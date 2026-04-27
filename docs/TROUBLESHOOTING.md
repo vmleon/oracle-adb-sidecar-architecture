@@ -275,6 +275,23 @@ If `/data/postgres` already contains v17-format data you want to keep,
 that's a `pg_upgrade` problem — out of scope for this POC; nuke the
 volume (`sudo rm -rf /data/postgres/*`) and let Liquibase reseed.
 
+A related failure surfaces _after_ the mount-path fix:
+
+```
+mkdir: can't create directory '/var/lib/postgresql/18/': Permission denied
+```
+
+`postgres:18-alpine` runs as UID 70, not the debian image's UID 999. The
+ansible role now creates `/data/postgres` owned by 70 (`deploy/ansible/
+databases/roles/podman/tasks/main.yaml`); on a host deployed before that
+fix, recover with:
+
+```bash
+sudo chown 70:70 /data/postgres
+sudo systemctl reset-failed postgres
+sudo systemctl restart postgres
+```
+
 ### Oracle Free container slow first boot
 
 First run of `container-registry.oracle.com/database/free:latest` does a

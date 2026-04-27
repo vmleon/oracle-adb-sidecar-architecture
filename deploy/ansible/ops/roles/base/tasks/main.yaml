@@ -47,11 +47,12 @@
     remote_src: yes
   when: not liquibase_bin.stat.exists
 
-- name: Symlink liquibase to /usr/local/bin
+- name: Symlink liquibase to /usr/bin (in sudo's secure_path so the playbook can invoke it)
   ansible.builtin.file:
     src: /opt/liquibase/liquibase
-    dest: /usr/local/bin/liquibase
+    dest: /usr/bin/liquibase
     state: link
+    force: yes
 
 - name: Download Oracle JDBC driver (ojdbc11) into Liquibase lib
   ansible.builtin.get_url:
