@@ -9,7 +9,7 @@
 - `manage.py` (Click + Rich + InquirerPy + jinja2 + dotenv + OCI SDK) with `setup / build / tf / info / clean`.
 - Terraform under `deploy/tf/` with five modules (adbs, ops, front, back, databases) and per-artifact pre-authenticated requests.
 - Ansible under `deploy/ansible/` with one role per playbook, executed locally on each instance via cloud-init.
-- Spring Boot 3.5 backend with 4 datasource beans (3 JDBC + Mongo) and `GET /api/v1/demo` + `GET /api/v1/demo/via-sidecar`.
+- Spring Boot 3.5 backend with 4 datasource beans (3 JDBC + Mongo) exposing `GET /api/v1/query?table=&route=&runId=` (and `/api/v1/health`, `/api/v1/measurements*`).
 - Angular 21 SPA with one route (`/demo`) — two buttons that call each endpoint and render a per-entity table per engine.
 - Liquibase changelog scaffolding for ADB / Oracle / Postgres + `mongosh` init.js — each engine ships `deployment_marker` plus the banking demo data (`accounts`/`transactions` in Oracle, `policies`/`rules` in Postgres, `support_tickets` in Mongo).
 
@@ -34,7 +34,7 @@
 **Status**: wired in iteration 2.
 **How**: ADB now runs on a **private endpoint** in `db_subnet` (`modules/adbs/db.tf` via `subnet_id` + `nsg_ids`). The `nsg_adb` NSG (`deploy/tf/app/network.tf`) allows ingress on 1522 from the app and public subnets, and the `db_seclist` now allows the ADB private endpoint (same-subnet source) to reach Oracle/Postgres/Mongo on 1521/5432/27017.
 
-`database/liquibase/adb/002-db-links.yaml` creates three `DBMS_CLOUD.CREATE_CREDENTIAL` credentials, three `DBMS_CLOUD_ADMIN.CREATE_DATABASE_LINK` entries (`ORAFREE_LINK`, `PG_LINK`, `MONGO_LINK`) and five banking views (`V_ACCOUNTS`, `V_TRANSACTIONS`, `V_POLICIES`, `V_RULES`, `V_SUPPORT_TICKETS`) on ADB. The backend exposes `GET /api/v1/demo/via-sidecar`, and the frontend has a second button that queries it.
+`database/liquibase/adb/002-db-links.yaml` creates three `DBMS_CLOUD.CREATE_CREDENTIAL` credentials, three `DBMS_CLOUD_ADMIN.CREATE_DATABASE_LINK` entries (`ORAFREE_LINK`, `PG_LINK`, `MONGO_LINK`) and five banking views (`V_ACCOUNTS`, `V_TRANSACTIONS`, `V_POLICIES`, `V_RULES`, `V_SUPPORT_TICKETS`) on ADB. The backend's `GET /api/v1/query?route=federated` projects through these views; the frontend's per-table cards offer a `direct` vs `federated` toggle that hits the same endpoint.
 
 ### 2. Liquibase invocation
 
@@ -137,8 +137,8 @@ Until this ships, every reviewer will ask "so what does 26ai actually give me he
 - [ ] `terraform apply` completes in ~15–20 minutes.
 - [ ] `python manage.py info` prints the LB IP and ops SSH command.
 - [ ] `curl http://<lb>/api/v1/health` returns `{"status":"UP"}`.
-- [ ] `curl http://<lb>/api/v1/demo` returns banking rows for oracle / postgres / mongo (allow 5–10 minutes after `terraform apply` for the Oracle Free container to finish initializing).
-- [ ] `curl http://<lb>/api/v1/demo/via-sidecar` returns the same rows projected through ADB DB_LINK views.
+- [ ] `curl "http://<lb>/api/v1/query?table=accounts&route=direct&runId=smoke"` returns banking rows from Oracle Free (allow 5–10 minutes after `terraform apply` for the Oracle Free container to finish initializing). Repeat for `table=policies` (Postgres) and `table=support_tickets` (Mongo).
+- [ ] Same calls with `route=federated` return the rows projected through ADB DB_LINK views (`support_tickets` is expected to 501 — Mongo heterogeneous link is unsupported, see `docs/ISSUE_ADB_HETEROGENEOUS_MONGODB_OBJECT_NOT_FOUND.md`).
 - [ ] Browser at `http://<lb>/` renders the versions page; clicking the button populates four cards.
 
 ## Reference repos used as templates

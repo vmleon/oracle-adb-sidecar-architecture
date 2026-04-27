@@ -10,7 +10,7 @@ ExecStartPre=-/usr/bin/podman rm -f postgres
 ExecStart=/usr/bin/podman run --name postgres \
   -p 5432:5432 \
   -e POSTGRES_PASSWORD={{ postgres_db_password }} \
-  -v /data/postgres:/var/lib/postgresql/data:Z \
+  -v /data/postgres:/var/lib/postgresql:Z \
   docker.io/library/postgres:18-alpine
 ExecStop=/usr/bin/podman stop -t 30 postgres
 

@@ -20,9 +20,12 @@ echo "back=$BACK front=$FRONT db=$DB"
 # e.g. back=10.0.2.4 front=10.0.2.5 db=10.0.3.3
 
 curl -i http://$BACK:8080/api/v1/health
-curl -i http://$BACK:8080/api/v1/demo
+curl -i "http://$BACK:8080/api/v1/query?table=accounts&route=direct&runId=manual"
+curl -i "http://$BACK:8080/api/v1/query?table=accounts&route=federated&runId=manual"
 curl -sI http://$FRONT          # nginx on front
 nc -zv $DB 1521                 # Oracle Free container
+nc -zv $DB 5432                 # Postgres container
+nc -zv $DB 27017                # Mongo container
 ```
 
 ## Connecting to the four databases from ops
@@ -197,9 +200,22 @@ always what you want.
 
 ## Databases tier (podman containers)
 
-You do **not** SSH to the databases compute — the ops bastion talks to it
-over the network. If you really need a shell, use OCI Bastion service
-sessions against `databases_private_ip` (see `terraform output`).
+The databases compute has no public IP; the ops bastion talks to it over
+the VCN. For day-to-day ops you don't need a shell on the databases host
+— use the `adb` / `orafree` / `pg` / `mg` shortcuts on ops. When you do
+need a shell (container failed to start, want to read `journalctl`),
+hop from ops:
+
+```bash
+# from your laptop, with agent forwarding so the key on ops can reach databases
+ssh -A opc@<ops_public_ip>
+# then on ops
+ssh -o StrictHostKeyChecking=accept-new opc@"$DB"
+```
+
+The same key is authorized on both hosts (`deploy/tf/modules/databases/compute.tf`),
+so no extra key copy is needed. OCI Bastion service sessions also work
+if you prefer not to expose ops as a jump host.
 
 ### Check that the three containers are running
 
@@ -212,15 +228,52 @@ nc -zv $DB 5432
 nc -zv $DB 27017
 ```
 
-If the port is closed, the container didn't start. Use OCI Bastion to get
-a shell on the databases compute, then:
+If the port is closed, the container didn't start. Hop onto the databases
+compute (see above), then:
 
 ```bash
-sudo systemctl status oracle postgres mongo
-sudo journalctl -u oracle -n 200
+sudo systemctl status oracle postgres mongo --no-pager
+sudo journalctl -u postgres -n 200 --no-pager   # swap unit name as needed
 sudo podman ps --all
-sudo podman logs --tail 200 oracle
+sudo podman logs --tail 200 postgres            # or oracle / mongo
 ```
+
+### Postgres container exits 1 immediately on first boot
+
+The `postgres:18-alpine` image refuses to start when the persistent
+volume is mounted at `/var/lib/postgresql/data` (the v17 convention).
+You'll see this in `journalctl -u postgres` or `podman logs postgres`:
+
+```
+Error: in 18+, these Docker images are configured to store database data in a
+       format which is compatible with "pg_ctlcluster" ...
+       The suggested container configuration for 18+ is to place a single mount
+       at /var/lib/postgresql which will then place PostgreSQL data in a
+       subdirectory ...
+```
+
+The systemd unit will retry until `Start request repeated too quickly`
+locks it out, after which `systemctl start postgres` is a no-op until
+the cooldown clears. Recovery on a running host (the source template
+`deploy/ansible/databases/roles/podman/files/postgres.service.j2`
+already mounts at the correct path; this recipe is for hosts deployed
+before the fix):
+
+```bash
+# /data/postgres should be empty on a clean failure — nothing to migrate
+sudo ls -la /data/postgres
+
+sudo sed -i 's|/data/postgres:/var/lib/postgresql/data:Z|/data/postgres:/var/lib/postgresql:Z|' \
+  /etc/systemd/system/postgres.service
+sudo systemctl daemon-reload
+sudo systemctl reset-failed postgres
+sudo systemctl restart postgres
+sudo podman logs --tail 30 postgres   # expect "ready to accept connections"
+```
+
+If `/data/postgres` already contains v17-format data you want to keep,
+that's a `pg_upgrade` problem — out of scope for this POC; nuke the
+volume (`sudo rm -rf /data/postgres/*`) and let Liquibase reseed.
 
 ### Oracle Free container slow first boot
 
@@ -260,7 +313,15 @@ sudo systemctl status back
 sudo journalctl -u back -n 200 -f
 ```
 
-### Backend returns 500 on `/api/v1/demo`
+### Backend returns 500 on `/api/v1/query`
+
+The endpoint shape is `GET /api/v1/query?table=<t>&route=<r>&runId=<id>`
+where `table ∈ {accounts, transactions, policies, rules, support_tickets}`
+and `route ∈ {direct, federated}`. From ops:
+
+```bash
+curl -i "http://$BACK:8080/api/v1/query?table=accounts&route=direct&runId=manual"
+```
 
 Most common causes on first boot:
 
@@ -271,12 +332,13 @@ Most common causes on first boot:
    started. `systemctl restart back` after waiting a minute.
 3. **`Communications link failure`** to PG or Mongo — the containers
    aren't up (see databases tier above).
+4. **Empty result + `error: "...does not exist"`** — Liquibase / mongosh
+   seeding never ran. Check `/home/opc/ops/liquibase.log` on ops; if
+   missing, the ops playbook bailed out early — re-run it (see
+   "Re-run the ops Ansible role by hand" above).
 
-The backend returns per-engine error fields, so check the JSON body first:
-
-```json
-{"oracle":{"accounts_error":"ORA-01033: ..."},"postgres":{...},"mongo":{...}}
-```
+The response body carries the per-call elapsed time, row count, and
+(on failure) an `error` field, so curl the JSON before SSHing anywhere.
 
 ### Change the backend without rebuilding
 
@@ -312,10 +374,10 @@ The backend is unreachable or returning 5xx. Hit it from ops directly:
 
 ```bash
 curl -i http://$BACK:8080/api/v1/health
-curl -i http://$BACK:8080/api/v1/demo
+curl -i "http://$BACK:8080/api/v1/query?table=accounts&route=direct&runId=manual"
 ```
 
-If `/health` is green but `/demo` fails, the issue is in the back tier.
+If `/health` is green but `/query` fails, the issue is in the back tier.
 If `/health` also fails, the back service isn't running or the NSG / seclist
 isn't letting traffic through on 8080.
 
@@ -332,8 +394,8 @@ curl -i http://$(terraform -chdir=deploy/tf/app output -raw lb_public_ip)/api/v1
 
 ## Federated query sanity check (ADB → DB_LINKs)
 
-If `/api/v1/demo` works but `/api/v1/demo/via-sidecar` fails, the problem
-is in the ADB-side federation. Connect to ADB from ops and inspect:
+If `route=direct` works but `route=federated` fails, the problem is in
+the ADB-side federation. Connect to ADB from ops and inspect:
 
 ```bash
 adb
