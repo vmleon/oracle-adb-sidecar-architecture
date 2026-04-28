@@ -4,6 +4,7 @@ import dev.victormartin.adbsidecar.back.agents.dto.AgentRunResponse;
 import dev.victormartin.adbsidecar.back.agents.dto.AgentTrace;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -57,7 +58,7 @@ public class AgentsService {
     private final JdbcTemplate jdbc;
     private final String teamName;
 
-    public AgentsService(JdbcTemplate jdbc,
+    public AgentsService(@Qualifier("adbJdbc") JdbcTemplate jdbc,
                          @Value("${selectai.agents.team:BANKING_INVESTIGATION_TEAM}") String teamName) {
         this.jdbc = jdbc;
         this.teamName = teamName;
