@@ -89,3 +89,11 @@ variable "back_private_ip" {
 variable "front_private_ip" {
   type = string
 }
+
+variable "rag_bucket_name" {
+  type = string
+}
+
+variable "rag_bucket_namespace" {
+  type = string
+}

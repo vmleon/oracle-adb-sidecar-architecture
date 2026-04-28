@@ -73,7 +73,9 @@ cat <<EOT >> /home/opc/ansible_params.json
   "liquibase_adb_dir": "/home/opc/ops/database/liquibase/adb",
   "liquibase_oracle_dir": "/home/opc/ops/database/liquibase/oracle",
   "liquibase_postgres_dir": "/home/opc/ops/database/liquibase/postgres",
-  "mongo_init_js": "/home/opc/ops/database/mongo/init.js"
+  "mongo_init_js": "/home/opc/ops/database/mongo/init.js",
+  "rag_bucket_name": "${rag_bucket_name}",
+  "rag_bucket_namespace": "${rag_bucket_namespace}"
 }
 EOT
 

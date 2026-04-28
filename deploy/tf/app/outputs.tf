@@ -30,3 +30,11 @@ output "adb_admin_password" {
   value     = module.adbs.admin_password
   sensitive = true
 }
+
+output "rag_bucket_name" {
+  value = oci_objectstorage_bucket.banking_rag_docs.name
+}
+
+output "rag_bucket_namespace" {
+  value = oci_objectstorage_bucket.banking_rag_docs.namespace
+}

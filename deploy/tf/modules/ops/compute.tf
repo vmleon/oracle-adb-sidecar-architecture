@@ -16,6 +16,8 @@ locals {
     databases_fqdn            = var.databases_fqdn
     back_private_ip           = var.back_private_ip
     front_private_ip          = var.front_private_ip
+    rag_bucket_name           = var.rag_bucket_name
+    rag_bucket_namespace      = var.rag_bucket_namespace
   })
 }
 

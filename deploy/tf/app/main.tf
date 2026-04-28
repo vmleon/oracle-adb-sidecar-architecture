@@ -108,6 +108,8 @@ module "ops" {
   databases_fqdn                     = "databases${local.project_name}${local.deploy_id}.db.vcn${local.project_name}${local.deploy_id}.oraclevcn.com"
   back_private_ip                    = module.back.private_ip
   front_private_ip                   = module.front.private_ip
+  rag_bucket_name                    = oci_objectstorage_bucket.banking_rag_docs.name
+  rag_bucket_namespace               = oci_objectstorage_bucket.banking_rag_docs.namespace
 }
 
 resource "local_file" "adb_wallet_file" {

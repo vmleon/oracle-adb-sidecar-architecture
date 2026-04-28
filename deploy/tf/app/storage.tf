@@ -1,5 +1,14 @@
 resource "time_static" "deploy_time" {}
 
+resource "oci_objectstorage_bucket" "banking_rag_docs" {
+  compartment_id = var.compartment_ocid
+  namespace      = data.oci_objectstorage_namespace.objectstorage_namespace.namespace
+  name           = "banking-rag-docs"
+  access_type    = "NoPublicAccess"
+  storage_tier   = "Standard"
+  versioning     = "Disabled"
+}
+
 resource "oci_objectstorage_bucket" "artifacts_bucket" {
   compartment_id = var.compartment_ocid
   name           = "artifacts_${local.project_name}${local.deploy_id}"
