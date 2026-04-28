@@ -129,3 +129,218 @@ databaseChangeLog:
               - column: { name: counterparty_account, type: VARCHAR2(40) }
               - column: { name: status, type: VARCHAR2(8) }
               - column: { name: occurred_at, type: TIMESTAMP }
+
+  - changeSet:
+      id: oracle-003-seed-customers
+      author: adbsidecar
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              INSERT ALL
+                INTO customers (id, name, email, country_code, kyc_status, risk_tier, joined_at) VALUES (1,  'Alice Morgan',     'alice.morgan@example.com',     'US', 'EXPIRED',  'HIGH',   DATE '2018-03-15')
+                INTO customers (id, name, email, country_code, kyc_status, risk_tier, joined_at) VALUES (2,  'Bob Chen',         'bob.chen@example.com',         'US', 'VERIFIED', 'MEDIUM', DATE '2019-07-22')
+                INTO customers (id, name, email, country_code, kyc_status, risk_tier, joined_at) VALUES (3,  'Carol Diaz',       'carol.diaz@example.com',       'US', 'VERIFIED', 'LOW',    DATE '2017-11-04')
+                INTO customers (id, name, email, country_code, kyc_status, risk_tier, joined_at) VALUES (4,  'Jamal Reed',       'jamal.reed@example.com',       'US', 'VERIFIED', 'LOW',    DATE '2021-02-09')
+                INTO customers (id, name, email, country_code, kyc_status, risk_tier, joined_at) VALUES (5,  'Priya Iyer',       'priya.iyer@example.com',       'US', 'VERIFIED', 'LOW',    DATE '2020-05-30')
+                INTO customers (id, name, email, country_code, kyc_status, risk_tier, joined_at) VALUES (6,  'Marco Russo',      'marco.russo@example.com',      'IT', 'VERIFIED', 'LOW',    DATE '2022-01-18')
+                INTO customers (id, name, email, country_code, kyc_status, risk_tier, joined_at) VALUES (7,  'Yuki Tanaka',      'yuki.tanaka@example.com',      'JP', 'VERIFIED', 'LOW',    DATE '2021-09-03')
+                INTO customers (id, name, email, country_code, kyc_status, risk_tier, joined_at) VALUES (8,  'Sara Cohen',       'sara.cohen@example.com',       'US', 'VERIFIED', 'LOW',    DATE '2022-06-12')
+                INTO customers (id, name, email, country_code, kyc_status, risk_tier, joined_at) VALUES (9,  'Liam Walsh',       'liam.walsh@example.com',       'IE', 'VERIFIED', 'LOW',    DATE '2023-04-25')
+                INTO customers (id, name, email, country_code, kyc_status, risk_tier, joined_at) VALUES (10, 'Aisha Khan',       'aisha.khan@example.com',       'GB', 'VERIFIED', 'MEDIUM', DATE '2020-11-08')
+                INTO customers (id, name, email, country_code, kyc_status, risk_tier, joined_at) VALUES (11, 'Diego Vargas',     'diego.vargas@example.com',     'MX', 'VERIFIED', 'LOW',    DATE '2023-08-19')
+                INTO customers (id, name, email, country_code, kyc_status, risk_tier, joined_at) VALUES (12, 'Mei Lin',          'mei.lin@example.com',          'SG', 'VERIFIED', 'LOW',    DATE '2021-12-01')
+                INTO customers (id, name, email, country_code, kyc_status, risk_tier, joined_at) VALUES (13, 'Olu Adebayo',      'olu.adebayo@example.com',      'NG', 'PENDING',  'MEDIUM', DATE '2024-02-14')
+                INTO customers (id, name, email, country_code, kyc_status, risk_tier, joined_at) VALUES (14, 'Tomas Herrera',    'tomas.herrera@example.com',    'AR', 'VERIFIED', 'LOW',    DATE '2022-10-27')
+                INTO customers (id, name, email, country_code, kyc_status, risk_tier, joined_at) VALUES (15, 'Hannah Berg',      'hannah.berg@example.com',      'DE', 'VERIFIED', 'LOW',    DATE '2021-03-05')
+                INTO customers (id, name, email, country_code, kyc_status, risk_tier, joined_at) VALUES (16, 'Ravi Menon',       'ravi.menon@example.com',       'IN', 'VERIFIED', 'LOW',    DATE '2023-06-21')
+                INTO customers (id, name, email, country_code, kyc_status, risk_tier, joined_at) VALUES (17, 'Elena Petrova',    'elena.petrova@example.com',    'BG', 'VERIFIED', 'MEDIUM', DATE '2020-08-14')
+                INTO customers (id, name, email, country_code, kyc_status, risk_tier, joined_at) VALUES (18, 'Jonas Lind',       'jonas.lind@example.com',       'SE', 'VERIFIED', 'LOW',    DATE '2024-01-09')
+                INTO customers (id, name, email, country_code, kyc_status, risk_tier, joined_at) VALUES (19, 'Fatima Hassan',    'fatima.hassan@example.com',    'AE', 'VERIFIED', 'LOW',    DATE '2022-04-30')
+                INTO customers (id, name, email, country_code, kyc_status, risk_tier, joined_at) VALUES (20, 'Ben Wright',       'ben.wright@example.com',       'US', 'VERIFIED', 'LOW',    DATE '2023-11-22')
+              SELECT 1 FROM DUAL
+
+  - changeSet:
+      id: oracle-003-seed-branches
+      author: adbsidecar
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              INSERT ALL
+                INTO branches (id, branch_code, city,            country_code, manager_name)    VALUES (1, 'NYC-01', 'New York',     'US', 'Diana Chen')
+                INTO branches (id, branch_code, city,            country_code, manager_name)    VALUES (2, 'NYC-02', 'Brooklyn',     'US', 'Marcus Hill')
+                INTO branches (id, branch_code, city,            country_code, manager_name)    VALUES (3, 'SFO-01', 'San Francisco','US', 'Renata Patel')
+                INTO branches (id, branch_code, city,            country_code, manager_name)    VALUES (4, 'LON-01', 'London',       'GB', 'Oliver Bennett')
+                INTO branches (id, branch_code, city,            country_code, manager_name)    VALUES (5, 'BER-01', 'Berlin',       'DE', 'Klaus Weber')
+                INTO branches (id, branch_code, city,            country_code, manager_name)    VALUES (6, 'SGP-01', 'Singapore',    'SG', 'Wei Lim')
+              SELECT 1 FROM DUAL
+
+  - changeSet:
+      id: oracle-003-backfill-existing-accounts
+      author: adbsidecar
+      changes:
+        - sql:
+            splitStatements: true
+            endDelimiter: ";"
+            sql: |
+              UPDATE accounts SET customer_id = 1, branch_id = 1, account_type = 'CHECKING',     currency = 'USD', opened_at = DATE '2018-03-15', status = 'ACTIVE' WHERE id = 1;
+              UPDATE accounts SET customer_id = 2, branch_id = 3, account_type = 'CHECKING',     currency = 'USD', opened_at = DATE '2019-07-22', status = 'ACTIVE' WHERE id = 2;
+              UPDATE accounts SET customer_id = 3, branch_id = 1, account_type = 'CHECKING',     currency = 'USD', opened_at = DATE '2017-11-04', status = 'ACTIVE' WHERE id = 3;
+
+  - changeSet:
+      id: oracle-003-seed-accounts-new
+      author: adbsidecar
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              INSERT ALL
+                INTO accounts (id, customer_name,    balance,    customer_id, branch_id, account_type,   currency, opened_at,             status)    VALUES (21, 'Carol Diaz',     4200.00,    3, 1, 'SAVINGS',      'USD', DATE '2018-06-12', 'ACTIVE')
+                INTO accounts (id, customer_name,    balance,    customer_id, branch_id, account_type,   currency, opened_at,             status)    VALUES (22, 'Bob Chen',       2350.50,    2, 3, 'CREDIT',       'USD', DATE '2020-02-04', 'ACTIVE')
+                INTO accounts (id, customer_name,    balance,    customer_id, branch_id, account_type,   currency, opened_at,             status)    VALUES (23, 'Alice Morgan',  18450.75,    1, 1, 'SAVINGS',      'USD', DATE '2018-03-15', 'ACTIVE')
+                INTO accounts (id, customer_name,    balance,    customer_id, branch_id, account_type,   currency, opened_at,             status)    VALUES (24, 'Jamal Reed',     1840.00,    4, 3, 'CHECKING',     'USD', DATE '2021-02-09', 'FROZEN')
+                INTO accounts (id, customer_name,    balance,    customer_id, branch_id, account_type,   currency, opened_at,             status)    VALUES (25, 'Priya Iyer',     7820.40,    5, 3, 'CHECKING',     'USD', DATE '2020-05-30', 'ACTIVE')
+                INTO accounts (id, customer_name,    balance,    customer_id, branch_id, account_type,   currency, opened_at,             status)    VALUES (26, 'Marco Russo',    3210.00,    6, 5, 'CHECKING',     'EUR', DATE '2022-01-18', 'ACTIVE')
+                INTO accounts (id, customer_name,    balance,    customer_id, branch_id, account_type,   currency, opened_at,             status)    VALUES (27, 'Yuki Tanaka',    5670.00,    7, 6, 'CHECKING',     'USD', DATE '2021-09-03', 'ACTIVE')
+                INTO accounts (id, customer_name,    balance,    customer_id, branch_id, account_type,   currency, opened_at,             status)    VALUES (28, 'Sara Cohen',     9240.50,    8, 1, 'CHECKING',     'USD', DATE '2022-06-12', 'ACTIVE')
+                INTO accounts (id, customer_name,    balance,    customer_id, branch_id, account_type,   currency, opened_at,             status)    VALUES (29, 'Liam Walsh',     2100.00,    9, 4, 'CHECKING',     'GBP', DATE '2023-04-25', 'ACTIVE')
+                INTO accounts (id, customer_name,    balance,    customer_id, branch_id, account_type,   currency, opened_at,             status)    VALUES (30, 'Aisha Khan',     6480.10,   10, 4, 'CHECKING',     'GBP', DATE '2020-11-08', 'ACTIVE')
+                INTO accounts (id, customer_name,    balance,    customer_id, branch_id, account_type,   currency, opened_at,             status)    VALUES (31, 'Diego Vargas',   1990.00,   11, 3, 'CHECKING',     'USD', DATE '2023-08-19', 'ACTIVE')
+                INTO accounts (id, customer_name,    balance,    customer_id, branch_id, account_type,   currency, opened_at,             status)    VALUES (32, 'Mei Lin',        4300.00,   12, 6, 'CHECKING',     'SGD', DATE '2021-12-01', 'ACTIVE')
+                INTO accounts (id, customer_name,    balance,    customer_id, branch_id, account_type,   currency, opened_at,             status)    VALUES (33, 'Olu Adebayo',    1200.00,   13, 1, 'CHECKING',     'USD', DATE '2024-02-14', 'ACTIVE')
+                INTO accounts (id, customer_name,    balance,    customer_id, branch_id, account_type,   currency, opened_at,             status)    VALUES (34, 'Tomas Herrera',  3550.00,   14, 1, 'CHECKING',     'USD', DATE '2022-10-27', 'ACTIVE')
+                INTO accounts (id, customer_name,    balance,    customer_id, branch_id, account_type,   currency, opened_at,             status)    VALUES (35, 'Hannah Berg',    4900.25,   15, 5, 'CHECKING',     'EUR', DATE '2021-03-05', 'ACTIVE')
+                INTO accounts (id, customer_name,    balance,    customer_id, branch_id, account_type,   currency, opened_at,             status)    VALUES (36, 'Ravi Menon',     2780.00,   16, 6, 'CHECKING',     'USD', DATE '2023-06-21', 'ACTIVE')
+                INTO accounts (id, customer_name,    balance,    customer_id, branch_id, account_type,   currency, opened_at,             status)    VALUES (37, 'Elena Petrova',  6210.00,   17, 5, 'CHECKING',     'EUR', DATE '2020-08-14', 'ACTIVE')
+                INTO accounts (id, customer_name,    balance,    customer_id, branch_id, account_type,   currency, opened_at,             status)    VALUES (38, 'Jonas Lind',     3300.00,   18, 5, 'CHECKING',     'EUR', DATE '2024-01-09', 'ACTIVE')
+                INTO accounts (id, customer_name,    balance,    customer_id, branch_id, account_type,   currency, opened_at,             status)    VALUES (39, 'Fatima Hassan',  8120.00,   19, 6, 'CHECKING',     'USD', DATE '2022-04-30', 'ACTIVE')
+                INTO accounts (id, customer_name,    balance,    customer_id, branch_id, account_type,   currency, opened_at,             status)    VALUES (40, 'Ben Wright',     2410.00,   20, 1, 'CHECKING',     'USD', DATE '2023-11-22', 'ACTIVE')
+              SELECT 1 FROM DUAL
+
+  - changeSet:
+      id: oracle-003-backfill-existing-transactions
+      author: adbsidecar
+      changes:
+        - sql:
+            splitStatements: true
+            endDelimiter: ";"
+            sql: |
+              UPDATE transactions SET txn_type = 'CARD',     currency = 'USD', channel = 'POS',    merchant = 'Trader Joe''s', merchant_country = 'US', status = 'POSTED', occurred_at = TIMESTAMP '2026-03-20 12:14:00' WHERE id = 1;
+              UPDATE transactions SET txn_type = 'ACH',      currency = 'USD', channel = 'ONLINE', merchant = NULL,            merchant_country = NULL, status = 'POSTED', occurred_at = TIMESTAMP '2026-04-01 09:00:00' WHERE id = 2;
+              UPDATE transactions SET txn_type = 'CARD',     currency = 'USD', channel = 'POS',    merchant = 'Starbucks',     merchant_country = 'US', status = 'POSTED', occurred_at = TIMESTAMP '2026-03-22 08:42:00' WHERE id = 3;
+              UPDATE transactions SET txn_type = 'ACH',      currency = 'USD', channel = 'ONLINE', merchant = NULL,            merchant_country = NULL, status = 'POSTED', occurred_at = TIMESTAMP '2026-04-01 09:00:00' WHERE id = 4;
+              UPDATE transactions SET txn_type = 'CARD',     currency = 'USD', channel = 'POS',    merchant = 'Best Buy',      merchant_country = 'US', status = 'POSTED', occurred_at = TIMESTAMP '2026-04-08 15:30:00' WHERE id = 5;
+              UPDATE transactions SET txn_type = 'ACH',      currency = 'USD', channel = 'ONLINE', merchant = NULL,            merchant_country = NULL, status = 'POSTED', occurred_at = TIMESTAMP '2026-04-01 09:00:00' WHERE id = 6;
+              UPDATE transactions SET txn_type = 'CARD',     currency = 'USD', channel = 'POS',    merchant = 'CVS',           merchant_country = 'US', status = 'POSTED', occurred_at = TIMESTAMP '2026-04-04 17:11:00' WHERE id = 7;
+              UPDATE transactions SET txn_type = 'CARD',     currency = 'USD', channel = 'POS',    merchant = 'Whole Foods',   merchant_country = 'US', status = 'POSTED', occurred_at = TIMESTAMP '2026-04-10 18:55:00' WHERE id = 8;
+
+  - changeSet:
+      id: oracle-003-seed-transactions-narratives
+      author: adbsidecar
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              INSERT ALL
+                -- Carol Diaz (account_id=3) — structuring
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,           merchant_country, counterparty_account, status,   occurred_at) VALUES (101, 3,  -9500.00, 'WIRE', 'USD', 'ONLINE', NULL,           'BY', 'BY-86-AKBB-30120-2034', 'POSTED',   TIMESTAMP '2026-04-09 09:14:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,           merchant_country, counterparty_account, status,   occurred_at) VALUES (102, 3,  -9700.00, 'WIRE', 'USD', 'ONLINE', NULL,           'BY', 'BY-86-AKBB-30120-2035', 'POSTED',   TIMESTAMP '2026-04-10 10:22:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,           merchant_country, counterparty_account, status,   occurred_at) VALUES (103, 3,  -9800.00, 'WIRE', 'USD', 'ONLINE', NULL,           'BY', 'BY-86-AKBB-30120-2036', 'POSTED',   TIMESTAMP '2026-04-12 14:08:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,           merchant_country, counterparty_account, status,   occurred_at) VALUES (104, 3,  -9550.00, 'WIRE', 'USD', 'ONLINE', NULL,           'BY', 'BY-86-AKBB-30120-2037', 'POSTED',   TIMESTAMP '2026-04-14 11:46:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,           merchant_country, counterparty_account, status,   occurred_at) VALUES (105, 3,  +3200.00, 'ACH',  'USD', 'ONLINE', NULL,           NULL, 'EMPLOYER-PAYROLL',     'POSTED',   TIMESTAMP '2026-03-15 09:00:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,           merchant_country, counterparty_account, status,   occurred_at) VALUES (106, 3,  +3200.00, 'ACH',  'USD', 'ONLINE', NULL,           NULL, 'EMPLOYER-PAYROLL',     'POSTED',   TIMESTAMP '2026-04-01 09:00:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,           merchant_country, counterparty_account, status,   occurred_at) VALUES (107, 3,  -85.40,   'CARD', 'USD', 'POS',    'Whole Foods',  'US', NULL,                    'POSTED',   TIMESTAMP '2026-03-25 18:33:00')
+                -- Bob Chen (account_id=2) — Reg E duplicate post
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,           merchant_country, counterparty_account, status,   occurred_at) VALUES (110, 2,  -230.00,  'CARD', 'USD', 'POS',    'Acme Hardware','US', NULL,                    'POSTED',   TIMESTAMP '2026-04-13 18:42:17')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,           merchant_country, counterparty_account, status,   occurred_at) VALUES (111, 2,  -230.00,  'CARD', 'USD', 'POS',    'Acme Hardware','US', NULL,                    'POSTED',   TIMESTAMP '2026-04-13 18:46:33')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,           merchant_country, counterparty_account, status,   occurred_at) VALUES (112, 2,  +5800.00, 'ACH',  'USD', 'ONLINE', NULL,           NULL, 'EMPLOYER-PAYROLL',     'POSTED',   TIMESTAMP '2026-04-01 09:00:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,           merchant_country, counterparty_account, status,   occurred_at) VALUES (113, 2,  -340.00,  'CARD', 'USD', 'POS',    'Costco',       'US', NULL,                    'POSTED',   TIMESTAMP '2026-04-05 13:08:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,           merchant_country, counterparty_account, status,   occurred_at) VALUES (114, 2,  -65.00,   'CARD', 'USD', 'POS',    'Shell',        'US', NULL,                    'POSTED',   TIMESTAMP '2026-04-10 07:55:00')
+                -- Alice Morgan (account_id=1) — five large cash deposits at branch NYC-01
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,           merchant_country, counterparty_account, status,   occurred_at) VALUES (120, 1,  +9100.00, 'ATM',  'USD', 'BRANCH', NULL,           'US', 'CASH',                 'POSTED',   TIMESTAMP '2026-04-05 10:30:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,           merchant_country, counterparty_account, status,   occurred_at) VALUES (121, 1,  +9200.00, 'ATM',  'USD', 'BRANCH', NULL,           'US', 'CASH',                 'POSTED',   TIMESTAMP '2026-04-08 11:15:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,           merchant_country, counterparty_account, status,   occurred_at) VALUES (122, 1,  +9000.00, 'ATM',  'USD', 'BRANCH', NULL,           'US', 'CASH',                 'POSTED',   TIMESTAMP '2026-04-10 09:45:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,           merchant_country, counterparty_account, status,   occurred_at) VALUES (123, 1,  +9400.00, 'ATM',  'USD', 'BRANCH', NULL,           'US', 'CASH',                 'POSTED',   TIMESTAMP '2026-04-12 14:20:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,           merchant_country, counterparty_account, status,   occurred_at) VALUES (124, 1,  +9300.00, 'ATM',  'USD', 'BRANCH', NULL,           'US', 'CASH',                 'POSTED',   TIMESTAMP '2026-04-14 13:05:00')
+                -- Jamal Reed (account_id=24) — velocity declines
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,           merchant_country, counterparty_account, status,   occurred_at) VALUES (130, 24, -45.00,   'CARD', 'USD', 'POS',    'Shell',        'US', NULL,                    'DECLINED', TIMESTAMP '2026-04-14 14:02:11')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,           merchant_country, counterparty_account, status,   occurred_at) VALUES (131, 24, -52.00,   'CARD', 'EUR', 'POS',    'Total Energies','FR', NULL,                   'DECLINED', TIMESTAMP '2026-04-14 14:18:33')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,           merchant_country, counterparty_account, status,   occurred_at) VALUES (132, 24, -38.00,   'CARD', 'GBP', 'POS',    'BP',           'GB', NULL,                    'DECLINED', TIMESTAMP '2026-04-14 14:46:55')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,           merchant_country, counterparty_account, status,   occurred_at) VALUES (133, 24, +4500.00, 'ACH',  'USD', 'ONLINE', NULL,           NULL, 'EMPLOYER-PAYROLL',     'POSTED',   TIMESTAMP '2026-04-01 09:00:00')
+                -- Priya Iyer (account_id=25) — clean baseline
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,           merchant_country, counterparty_account, status,   occurred_at) VALUES (140, 25, +5200.00, 'ACH',  'USD', 'ONLINE', NULL,           NULL, 'EMPLOYER-PAYROLL',     'POSTED',   TIMESTAMP '2026-04-01 09:00:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,           merchant_country, counterparty_account, status,   occurred_at) VALUES (141, 25, -42.00,   'CARD', 'USD', 'POS',    'Trader Joe''s','US', NULL,                    'POSTED',   TIMESTAMP '2026-04-04 17:30:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,           merchant_country, counterparty_account, status,   occurred_at) VALUES (142, 25, -1500.00, 'ACH',  'USD', 'ONLINE', NULL,           NULL, 'RENT-LANDLORD',         'POSTED',   TIMESTAMP '2026-04-08 09:00:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,           merchant_country, counterparty_account, status,   occurred_at) VALUES (143, 25, -78.00,   'CARD', 'USD', 'POS',    'PG&E',         'US', NULL,                    'POSTED',   TIMESTAMP '2026-04-12 10:00:00')
+              SELECT 1 FROM DUAL
+
+  - changeSet:
+      id: oracle-003-seed-transactions-routine
+      author: adbsidecar
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              INSERT ALL
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (200, 26, +3500.00, 'ACH',  'EUR', 'ONLINE', NULL,             NULL, 'EMPLOYER-PAYROLL',  'POSTED', TIMESTAMP '2026-04-01 09:00:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (201, 26, -1200.00, 'ACH',  'EUR', 'ONLINE', NULL,             NULL, 'RENT-LANDLORD',     'POSTED', TIMESTAMP '2026-04-03 09:00:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (202, 26, -55.00,   'CARD', 'EUR', 'POS',    'Carrefour',      'IT', NULL,                'POSTED', TIMESTAMP '2026-04-09 19:14:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (203, 26, -88.00,   'CARD', 'EUR', 'POS',    'Esselunga',      'IT', NULL,                'POSTED', TIMESTAMP '2026-04-13 18:00:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (210, 27, +5400.00, 'ACH',  'USD', 'ONLINE', NULL,             NULL, 'EMPLOYER-PAYROLL',  'POSTED', TIMESTAMP '2026-04-01 09:00:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (211, 27, -1800.00, 'ACH',  'USD', 'ONLINE', NULL,             NULL, 'RENT-LANDLORD',     'POSTED', TIMESTAMP '2026-04-03 09:00:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (212, 27, -45.00,   'CARD', 'JPY', 'POS',    'Family Mart',    'JP', NULL,                'POSTED', TIMESTAMP '2026-04-07 13:11:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (213, 27, -120.00,  'CARD', 'JPY', 'POS',    'Don Quijote',    'JP', NULL,                'POSTED', TIMESTAMP '2026-04-11 20:47:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (220, 28, +6200.00, 'ACH',  'USD', 'ONLINE', NULL,             NULL, 'EMPLOYER-PAYROLL',  'POSTED', TIMESTAMP '2026-04-01 09:00:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (221, 28, -2100.00, 'ACH',  'USD', 'ONLINE', NULL,             NULL, 'RENT-LANDLORD',     'POSTED', TIMESTAMP '2026-04-03 09:00:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (222, 28, -64.00,   'CARD', 'USD', 'POS',    'Whole Foods',    'US', NULL,                'POSTED', TIMESTAMP '2026-04-06 18:00:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (223, 28, -110.00,  'CARD', 'USD', 'POS',    'Costco',         'US', NULL,                'POSTED', TIMESTAMP '2026-04-12 11:42:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (230, 29, +3100.00, 'ACH',  'GBP', 'ONLINE', NULL,             NULL, 'EMPLOYER-PAYROLL',  'POSTED', TIMESTAMP '2026-04-01 09:00:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (231, 29, -900.00,  'ACH',  'GBP', 'ONLINE', NULL,             NULL, 'RENT-LANDLORD',     'POSTED', TIMESTAMP '2026-04-03 09:00:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (232, 29, -39.00,   'CARD', 'GBP', 'POS',    'Tesco',          'GB', NULL,                'POSTED', TIMESTAMP '2026-04-08 19:00:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (233, 29, -52.00,   'CARD', 'GBP', 'POS',    'Sainsbury''s',   'GB', NULL,                'POSTED', TIMESTAMP '2026-04-13 18:30:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (240, 30, +4400.00, 'ACH',  'GBP', 'ONLINE', NULL,             NULL, 'EMPLOYER-PAYROLL',  'POSTED', TIMESTAMP '2026-04-01 09:00:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (241, 30, -1500.00, 'ACH',  'GBP', 'ONLINE', NULL,             NULL, 'RENT-LANDLORD',     'POSTED', TIMESTAMP '2026-04-03 09:00:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (242, 30, -68.00,   'CARD', 'GBP', 'POS',    'Marks & Spencer','GB', NULL,                'POSTED', TIMESTAMP '2026-04-09 17:25:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (243, 30, -41.00,   'CARD', 'GBP', 'POS',    'Pret a Manger',  'GB', NULL,                'POSTED', TIMESTAMP '2026-04-14 12:30:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (250, 31, +3800.00, 'ACH',  'USD', 'ONLINE', NULL,             NULL, 'EMPLOYER-PAYROLL',  'POSTED', TIMESTAMP '2026-04-01 09:00:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (251, 31, -1100.00, 'ACH',  'USD', 'ONLINE', NULL,             NULL, 'RENT-LANDLORD',     'POSTED', TIMESTAMP '2026-04-03 09:00:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (252, 31, -47.00,   'CARD', 'USD', 'POS',    'Walmart',        'US', NULL,                'POSTED', TIMESTAMP '2026-04-07 19:14:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (253, 31, -29.00,   'CARD', 'USD', 'POS',    'Chipotle',       'US', NULL,                'POSTED', TIMESTAMP '2026-04-11 12:14:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (260, 32, +5100.00, 'ACH',  'SGD', 'ONLINE', NULL,             NULL, 'EMPLOYER-PAYROLL',  'POSTED', TIMESTAMP '2026-04-01 09:00:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (261, 32, -1700.00, 'ACH',  'SGD', 'ONLINE', NULL,             NULL, 'RENT-LANDLORD',     'POSTED', TIMESTAMP '2026-04-03 09:00:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (262, 32, -38.00,   'CARD', 'SGD', 'POS',    'NTUC FairPrice', 'SG', NULL,                'POSTED', TIMESTAMP '2026-04-09 18:25:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (263, 32, -22.00,   'CARD', 'SGD', 'POS',    'Toast Box',      'SG', NULL,                'POSTED', TIMESTAMP '2026-04-13 09:14:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (270, 33, +2900.00, 'ACH',  'USD', 'ONLINE', NULL,             NULL, 'EMPLOYER-PAYROLL',  'POSTED', TIMESTAMP '2026-04-01 09:00:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (271, 33, -800.00,  'ACH',  'USD', 'ONLINE', NULL,             NULL, 'RENT-LANDLORD',     'POSTED', TIMESTAMP '2026-04-03 09:00:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (272, 33, -34.00,   'CARD', 'USD', 'POS',    'Walmart',        'US', NULL,                'POSTED', TIMESTAMP '2026-04-08 17:00:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (273, 33, -22.00,   'CARD', 'USD', 'POS',    'Subway',         'US', NULL,                'POSTED', TIMESTAMP '2026-04-12 13:42:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (280, 34, +4100.00, 'ACH',  'USD', 'ONLINE', NULL,             NULL, 'EMPLOYER-PAYROLL',  'POSTED', TIMESTAMP '2026-04-01 09:00:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (281, 34, -1300.00, 'ACH',  'USD', 'ONLINE', NULL,             NULL, 'RENT-LANDLORD',     'POSTED', TIMESTAMP '2026-04-03 09:00:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (282, 34, -49.00,   'CARD', 'USD', 'POS',    'Whole Foods',    'US', NULL,                'POSTED', TIMESTAMP '2026-04-09 18:00:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (283, 34, -32.00,   'CARD', 'USD', 'POS',    'Starbucks',      'US', NULL,                'POSTED', TIMESTAMP '2026-04-13 08:14:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (290, 35, +4700.00, 'ACH',  'EUR', 'ONLINE', NULL,             NULL, 'EMPLOYER-PAYROLL',  'POSTED', TIMESTAMP '2026-04-01 09:00:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (291, 35, -1400.00, 'ACH',  'EUR', 'ONLINE', NULL,             NULL, 'RENT-LANDLORD',     'POSTED', TIMESTAMP '2026-04-03 09:00:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (292, 35, -42.00,   'CARD', 'EUR', 'POS',    'REWE',           'DE', NULL,                'POSTED', TIMESTAMP '2026-04-08 18:42:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (293, 35, -55.00,   'CARD', 'EUR', 'POS',    'Edeka',          'DE', NULL,                'POSTED', TIMESTAMP '2026-04-13 17:55:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (300, 36, +3300.00, 'ACH',  'USD', 'ONLINE', NULL,             NULL, 'EMPLOYER-PAYROLL',  'POSTED', TIMESTAMP '2026-04-01 09:00:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (301, 36, -950.00,  'ACH',  'USD', 'ONLINE', NULL,             NULL, 'RENT-LANDLORD',     'POSTED', TIMESTAMP '2026-04-03 09:00:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (302, 36, -29.00,   'CARD', 'USD', 'POS',    'Trader Joe''s',  'US', NULL,                'POSTED', TIMESTAMP '2026-04-08 19:08:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (303, 36, -41.00,   'CARD', 'USD', 'POS',    'Costco',         'US', NULL,                'POSTED', TIMESTAMP '2026-04-12 14:22:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (310, 37, +5500.00, 'ACH',  'EUR', 'ONLINE', NULL,             NULL, 'EMPLOYER-PAYROLL',  'POSTED', TIMESTAMP '2026-04-01 09:00:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (311, 37, -1600.00, 'ACH',  'EUR', 'ONLINE', NULL,             NULL, 'RENT-LANDLORD',     'POSTED', TIMESTAMP '2026-04-03 09:00:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (312, 37, -33.00,   'CARD', 'EUR', 'POS',    'Lidl',           'DE', NULL,                'POSTED', TIMESTAMP '2026-04-09 18:30:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (313, 37, -48.00,   'CARD', 'EUR', 'POS',    'Edeka',          'DE', NULL,                'POSTED', TIMESTAMP '2026-04-13 17:00:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (320, 38, +4200.00, 'ACH',  'EUR', 'ONLINE', NULL,             NULL, 'EMPLOYER-PAYROLL',  'POSTED', TIMESTAMP '2026-04-01 09:00:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (321, 38, -1100.00, 'ACH',  'EUR', 'ONLINE', NULL,             NULL, 'RENT-LANDLORD',     'POSTED', TIMESTAMP '2026-04-03 09:00:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (322, 38, -38.00,   'CARD', 'EUR', 'POS',    'ICA',            'SE', NULL,                'POSTED', TIMESTAMP '2026-04-08 17:42:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (323, 38, -52.00,   'CARD', 'EUR', 'POS',    'Coop',           'SE', NULL,                'POSTED', TIMESTAMP '2026-04-13 18:14:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (330, 39, +6800.00, 'ACH',  'USD', 'ONLINE', NULL,             NULL, 'EMPLOYER-PAYROLL',  'POSTED', TIMESTAMP '2026-04-01 09:00:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (331, 39, -2400.00, 'ACH',  'USD', 'ONLINE', NULL,             NULL, 'RENT-LANDLORD',     'POSTED', TIMESTAMP '2026-04-03 09:00:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (332, 39, -75.00,   'CARD', 'AED', 'POS',    'Carrefour',      'AE', NULL,                'POSTED', TIMESTAMP '2026-04-09 19:55:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (333, 39, -90.00,   'CARD', 'AED', 'POS',    'Spinneys',       'AE', NULL,                'POSTED', TIMESTAMP '2026-04-13 18:00:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (340, 40, +3700.00, 'ACH',  'USD', 'ONLINE', NULL,             NULL, 'EMPLOYER-PAYROLL',  'POSTED', TIMESTAMP '2026-04-01 09:00:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (341, 40, -1050.00, 'ACH',  'USD', 'ONLINE', NULL,             NULL, 'RENT-LANDLORD',     'POSTED', TIMESTAMP '2026-04-03 09:00:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (342, 40, -36.00,   'CARD', 'USD', 'POS',    'Trader Joe''s',  'US', NULL,                'POSTED', TIMESTAMP '2026-04-08 18:42:00')
+                INTO transactions (id, account_id, amount,    txn_type, currency, channel, merchant,         merchant_country, counterparty_account, status,   occurred_at) VALUES (343, 40, -54.00,   'CARD', 'USD', 'POS',    'Whole Foods',    'US', NULL,                'POSTED', TIMESTAMP '2026-04-13 17:30:00')
+              SELECT 1 FROM DUAL
