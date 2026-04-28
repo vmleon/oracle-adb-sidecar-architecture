@@ -8,7 +8,7 @@ The frontend ships four routes against a small banking demo dataset seeded on fi
 
 - `/app` — **current app path.** The backend opens direct JDBC/Mongo connections to each production database. Proves every datasource is reachable; this is what your app already does today.
 - `/sidecar` — **sidecar path.** The backend queries ADB; ADB resolves `V_ACCOUNTS`, `V_TRANSACTIONS`, `V_POLICIES`, `V_RULES` over DB_LINK. Proves the federated path end-to-end. (Mongo via sidecar is deliberately disabled; see [docs/ISSUE_ADB_HETEROGENEOUS_MONGODB_OBJECT_NOT_FOUND.md](docs/ISSUE_ADB_HETEROGENEOUS_MONGODB_OBJECT_NOT_FOUND.md).)
-- `/future` — **AI features.** Placeholder for Select AI Agents and other 26ai capabilities that land next.
+- `/agents` — **Select AI Agents.** A four-agent banking investigation team running entirely inside the ADB sidecar (`DBMS_CLOUD_AI_AGENT.RUN_TEAM`). One prompt fans out to a Transaction Analyst, a Compliance Officer (SQL + RAG over a policy-doc vector index), a Customer Care Liaison, and a Case Synthesiser; the page renders the final answer plus a per-task execution trace. See the new "Select AI Agents" section below.
 - `/measurements` — **direct vs federated dashboard.** Wall-clock timing for every query, persisted asynchronously to ADB, with summary stats and box plots so the "federated is slower — by how much?" question has a data answer.
 
 ### `/app` — direct
@@ -22,6 +22,82 @@ Five cards, one per table (accounts, transactions, policies, rules, support_tick
 ![ADB sidecar screenshot](images/federated.png)
 
 Same five cards, same dataset, but every query is now routed through the ADB sidecar and its DB_LINK views. The numbers next to each card show the extra latency the federated hop costs (compare with `/app` side by side). The `support_tickets` card is statically marked "not available" — the ADB heterogeneous MongoDB gateway is broken.
+
+### `/agents` — Select AI Agents
+
+![Select AI Agents screenshot](images/agents.png) <!-- captured after first deploy; see §13.2 -->
+
+The same banking dataset, but every question is now answered by a team of four
+agents collaborating inside ADB. The backend issues one
+`DBMS_CLOUD_AI_AGENT.RUN_TEAM` call; ADB plans the work, calls OCI Generative
+AI for each agent, runs the SQL/RAG tools against `V_BNK_*` views, and returns
+both the final synthesised answer and a structured execution trace.
+
+**The team — `BANKING_INVESTIGATION_TEAM`, sequential process:**
+
+| #   | Agent                   | Profile                     | Tools                                        | Reads from                                                                                             |
+| --- | ----------------------- | --------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| 1   | `TRANSACTION_ANALYST`   | `BANKING_NL2SQL_TXN`        | `TXN_SQL_TOOL`                               | `V_BNK_CUSTOMERS`, `V_BNK_ACCOUNTS`, `V_BNK_TRANSACTIONS`, `V_BNK_BRANCHES`                            |
+| 2   | `COMPLIANCE_OFFICER`    | `BANKING_NL2SQL_COMPLIANCE` | `COMPLIANCE_SQL_TOOL`, `COMPLIANCE_RAG_TOOL` | `V_BNK_POLICIES`, `V_BNK_RULES`, `BANKING_POLICY_INDEX` (5 markdown policy docs in OCI Object Storage) |
+| 3   | `CUSTOMER_CARE_LIAISON` | `BANKING_NL2SQL_CARE`       | `CARE_SQL_TOOL`                              | `V_BNK_CUSTOMERS` today; `V_BNK_SUPPORT_TICKETS` once the Mongo gateway is fixed                       |
+| 4   | `CASE_SYNTHESIZER`      | `BANKING_CHAT`              | (none — pure LLM reasoning)                  | The other agents' outputs                                                                              |
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as User<br/>(/agents page)
+    participant B as Backend<br/>(Spring Boot)
+    participant T as TRANSACTION_ANALYST
+    participant C as COMPLIANCE_OFFICER
+    participant L as CUSTOMER_CARE_LIAISON
+    participant S as CASE_SYNTHESIZER
+
+    U->>B: POST /api/v1/agents { prompt, conversationId? }
+    B->>T: PULL_TXN_FACTS(query)
+    T-->>B: facts
+    B->>C: ASSESS_COMPLIANCE(query, facts)
+    C-->>B: assessment (rules + policy quotes)
+    B->>L: GATHER_CARE_CONTEXT(query, facts)
+    L-->>B: customer context
+    B->>S: SYNTHESIZE_CASE(query, assessment, context)
+    S-->>B: case file
+    B-->>U: { answer, trace, conversationId }
+```
+
+```mermaid
+flowchart LR
+    classDef def fill:#fff,stroke:#999,color:#333
+    classDef agent fill:#dde9ff,stroke:#345,color:#234
+    classDef store fill:#f0f0f0,stroke:#666,color:#333
+    classDef rag   fill:#fff4dc,stroke:#a80,color:#542
+
+    T[TRANSACTION_ANALYST]:::agent
+    C[COMPLIANCE_OFFICER]:::agent
+    L[CUSTOMER_CARE_LIAISON]:::agent
+    S[CASE_SYNTHESIZER]:::agent
+
+    O[("Oracle Free 26ai<br/>customers · accounts<br/>transactions · branches")]:::store
+    P[("Postgres 18<br/>policies · rules")]:::store
+    M[("MongoDB 8<br/>support_tickets")]:::store
+    R[("OCI Object Storage<br/>BANKING_POLICY_INDEX<br/>(5 markdown docs)")]:::rag
+
+    T -->|V_BNK_* views| O
+    C -->|V_BNK_POLICIES, V_BNK_RULES| P
+    C -.RAG.-> R
+    L -->|V_BNK_CUSTOMERS| O
+    L -.deferred until Mongo gateway fix.-> M
+    S --- nope[no datasource — chat profile only]:::def
+```
+
+**Five demo questions** (clickable chips on the page; each reaches a different combination of agents and tools):
+
+1. _Are there any suspicious patterns on Carol Diaz's accounts this month?_
+2. _Bob Chen disputed a $230 charge — what should we do?_
+3. _Summarise Alice Morgan's risk profile._
+4. _Why is Jamal Reed's checking account frozen?_
+5. _What policies apply to international wires above $10K?_
+
+**Mongo support tickets are wired but deferred.** `V_BNK_SUPPORT_TICKETS` is shipped as a commented-out Liquibase changeset; the seed in `database/mongo/init.js` is extended from 4 to ~25 documents so the data is in place. When the ADB heterogeneous-gateway issue (`docs/ISSUE_ADB_HETEROGENEOUS_MONGODB_OBJECT_NOT_FOUND.md`) is resolved, three small Liquibase edits flip the CARE agent online — see §14, "Mongo flip-the-switch".
 
 ## Architecture
 
@@ -44,7 +120,7 @@ flowchart TB
     end
 
     subgraph appnet [App subnet 10.0.2.0/24]
-        front["Front · nginx + Angular 21<br/>/app · /sidecar · /future · /measurements"]
+        front["Front · nginx + Angular 21<br/>/app · /sidecar · /agents · /measurements"]
         back[Back<br/>Spring Boot 3.5 / Java 23]
     end
 
@@ -56,7 +132,7 @@ flowchart TB
         end
     end
 
-    adb[(Autonomous Database 26ai<br/><b>AI sidecar</b> · Vector · Select AI<br/>query_measurements)]
+    adb[(Autonomous Database 26ai<br/><b>AI sidecar</b> · Vector · Select AI Agents<br/>BANKING_INVESTIGATION_TEAM · BANKING_POLICY_INDEX<br/>query_measurements)]
 
     internet --> lb
     internet --> ops
