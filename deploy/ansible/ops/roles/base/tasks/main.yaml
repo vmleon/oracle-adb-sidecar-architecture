@@ -134,6 +134,29 @@
       conn -save orafree -replace -savepwd -url jdbc:oracle:thin:@//{{ databases_private_ip }}:1521/FREEPDB1 -u SYSTEM -password '{{ oracle_db_password }}'
       EXIT;
 
+# Wait for the databases tier to expose all three ports before we touch
+# SQLcl (which test-connects on `conn -save -savepwd`) or run Liquibase.
+# Oracle Free first-boot can take 5–10 min — longer than the cloud-init
+# pre-Ansible sleep, so without this the orafree registration races the
+# container and dies on ORA-17820.
+- name: Wait for Oracle Free 1521 on databases compute
+  ansible.builtin.wait_for:
+    host: "{{ databases_private_ip }}"
+    port: 1521
+    timeout: 600
+
+- name: Wait for Postgres 5432 on databases compute
+  ansible.builtin.wait_for:
+    host: "{{ databases_private_ip }}"
+    port: 5432
+    timeout: 600
+
+- name: Wait for Mongo 27017 on databases compute
+  ansible.builtin.wait_for:
+    host: "{{ databases_private_ip }}"
+    port: 27017
+    timeout: 600
+
 # SQLcl on this build ships with a broken JLine (missing jansi/jna natives)
 # that crashes whenever stdin isn't a real TTY. `script -q /dev/null -c ...`
 # wraps the command in a pseudo-TTY so JLine initializes cleanly. Combined
@@ -218,24 +241,6 @@
     src: "{{ liquibase_postgres_dir }}/liquibase.properties.j2"
     dest: "{{ liquibase_postgres_dir }}/liquibase.properties"
     mode: '0600'
-
-- name: Wait for Oracle Free 1521 on databases compute
-  ansible.builtin.wait_for:
-    host: "{{ databases_private_ip }}"
-    port: 1521
-    timeout: 600
-
-- name: Wait for Postgres 5432 on databases compute
-  ansible.builtin.wait_for:
-    host: "{{ databases_private_ip }}"
-    port: 5432
-    timeout: 600
-
-- name: Wait for Mongo 27017 on databases compute
-  ansible.builtin.wait_for:
-    host: "{{ databases_private_ip }}"
-    port: 27017
-    timeout: 600
 
 # Listener on 1521 comes up well before the PDB is open — poll Liquibase
 # until it can actually connect and run a query (ORA-01033 goes away).

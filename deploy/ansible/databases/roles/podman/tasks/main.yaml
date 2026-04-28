@@ -58,8 +58,18 @@
     timeout 900 bash -c "podman logs -f oracle 2>&1 | grep -m 1 'DATABASE IS READY TO USE!'"
   changed_when: false
 
-- name: Disable firewalld
-  ansible.builtin.service:
-    name: firewalld
-    state: stopped
-    enabled: no
+# Earlier deploys disabled firewalld outright, but a recent OL9 base-image
+# refresh re-enables it after the cloud-init `dnf update` (firewalld gets
+# pulled in / unmasked by a systemd-presets bump). Leave the service alone
+# and just open the three container ports — survives package updates and
+# matches the OL9 default posture.
+- name: Open container ports in firewalld (1521, 5432, 27017)
+  ansible.posix.firewalld:
+    port: "{{ item }}"
+    permanent: yes
+    immediate: yes
+    state: enabled
+  loop:
+    - 1521/tcp
+    - 5432/tcp
+    - 27017/tcp
