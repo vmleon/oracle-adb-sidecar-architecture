@@ -13,9 +13,9 @@ export const routes: Routes = [
       import('./pages/sidecar-page.component').then((m) => m.SidecarPageComponent),
   },
   {
-    path: 'future',
+    path: 'agents',
     loadComponent: () =>
-      import('./pages/future-page.component').then((m) => m.FuturePageComponent),
+      import('./pages/agents-page.component').then((m) => m.AgentsPageComponent),
   },
   {
     path: 'measurements',

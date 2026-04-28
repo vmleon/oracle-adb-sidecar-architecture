@@ -8,7 +8,7 @@ import { RouterLink, RouterLinkActive } from '@angular/router';
     <nav class="nav">
       <a routerLink="/app" routerLinkActive="active">Current app</a>
       <a routerLink="/sidecar" routerLinkActive="active">ADB sidecar</a>
-      <a routerLink="/future" routerLinkActive="active">AI features</a>
+      <a routerLink="/agents" routerLinkActive="active">Select AI Agents</a>
       <a routerLink="/measurements" routerLinkActive="active">Measurements</a>
     </nav>
   `,
