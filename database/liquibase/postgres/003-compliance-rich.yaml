@@ -43,3 +43,67 @@ databaseChangeLog:
             constraintName: uq_rules_code
             tableName: rules
             columnNames: code
+
+  - changeSet:
+      id: postgres-003-backfill-policies
+      author: adbsidecar
+      changes:
+        - sql:
+            splitStatements: true
+            endDelimiter: ";"
+            sql: |
+              UPDATE policies SET code = 'P-FRAUD-01', category = 'FRAUD', effective_at = DATE '2024-01-01' WHERE id = 1;
+              UPDATE policies SET code = 'P-AML-01',   category = 'AML',   effective_at = DATE '2024-01-01' WHERE id = 2;
+
+  - changeSet:
+      id: postgres-003-seed-policies-new
+      author: adbsidecar
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              INSERT INTO policies (id, name, description, code, category, effective_at) VALUES
+                (3, 'kyc-cip',           'Customer Identification Programme — KYC due diligence and periodic refresh',                            'P-KYC-01',  'KYC',       DATE '2024-01-01'),
+                (4, 'reg-e-disputes',    'Regulation E unauthorised electronic transfer dispute handling and timelines',                          'P-REGE-01', 'REG_E',     DATE '2024-01-01'),
+                (5, 'ofac-sanctions',    'OFAC SDN list screening and blocked-country procedures for wires and account opening',                  'P-OFAC-01', 'SANCTIONS', DATE '2024-01-01'),
+                (6, 'wire-transfer-sop', 'Wire transfer standard operating procedure: limits, jurisdictions, hold-and-release',                   'P-WIRE-01', 'WIRE',      DATE '2024-01-01'),
+                (7, 'ctr-reporting',     'Currency Transaction Reporting — $10K cash threshold filing requirement',                               'P-CTR-01',  'AML',       DATE '2024-01-01'),
+                (8, 'sar-procedures',    'Suspicious Activity Reporting — narrative requirements and 30-day filing window',                       'P-SAR-01',  'AML',       DATE '2024-01-01')
+              ;
+
+  - changeSet:
+      id: postgres-003-backfill-rules
+      author: adbsidecar
+      changes:
+        - sql:
+            splitStatements: true
+            endDelimiter: ";"
+            sql: |
+              UPDATE rules SET code = 'R-FRAUD-001', name = 'Online high-amount transaction',      threshold_amount = 5000,  severity = 'WARNING',   description = 'Online transaction over $5,000 deviates from baseline.',                           policy_code = 'P-FRAUD-01' WHERE id = 1;
+              UPDATE rules SET code = 'R-FRAUD-002', name = 'High velocity 24h',                   threshold_count  = 10,    threshold_window = 'P24H', severity = 'WARNING', description = 'More than 10 transactions in 24 hours.',                                   policy_code = 'P-FRAUD-01' WHERE id = 2;
+              UPDATE rules SET code = 'R-AML-001',   name = 'Single transaction at CTR threshold', threshold_amount = 10000, severity = 'VIOLATION', description = 'Single cash transaction at or above $10,000 triggers CTR filing.',               policy_code = 'P-AML-01'   WHERE id = 3;
+              UPDATE rules SET code = 'R-AML-WATCH', name = 'Watchlist counterparty',                                        severity = 'VIOLATION', description = 'Counterparty appears on the bank''s internal watchlist.',                        policy_code = 'P-AML-01'   WHERE id = 4;
+              UPDATE rules SET code = 'R-OFAC-001',  name = 'Sanctioned-country counterparty',                               severity = 'VIOLATION', description = 'Counterparty country code is on the OFAC blocked-country list (BY, IR, KP, RU, SY, …).', policy_code = 'P-OFAC-01' WHERE id = 5;
+
+  - changeSet:
+      id: postgres-003-seed-rules-new
+      author: adbsidecar
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              INSERT INTO rules (id, policy_id, expression, code, name, threshold_amount, threshold_count, threshold_window, severity, description, policy_code) VALUES
+                (6,  2, 'sum_cash_30d > 40000',                 'R-AML-002',   'Aggregated cash deposits',              40000, NULL, 'P30D',  'VIOLATION', 'Sum of cash deposits exceeding $40,000 within a 30-day window.',                                  'P-AML-01'),
+                (7,  2, 'count(amount IN [9000,10000)) >= 3',   'R-AML-005',   'Structuring under CTR threshold',       NULL,  3,    'P7D',   'VIOLATION', 'Three or more transactions just under $10,000 within 7 days.',                                    'P-AML-01'),
+                (8,  1, 'kyc_status = ''EXPIRED''',             'R-KYC-001',   'KYC document expired',                  NULL,  NULL, NULL,    'WARNING',   'Customer KYC documents have lapsed.',                                                             'P-KYC-01'),
+                (9,  1, 'risk_tier = ''HIGH'' AND kyc_age > 3y','R-KYC-002',   'KYC refresh overdue (HIGH risk)',       NULL,  NULL, 'P3Y',   'VIOLATION', 'High-risk customers must refresh KYC every 3 years.',                                             'P-KYC-01'),
+                (10, 1, 'flagged_activity = TRUE',              'R-KYC-003',   'Re-verify KYC on suspicious activity',  NULL,  NULL, NULL,    'WARNING',   'Initiate KYC refresh whenever new suspicious activity surfaces.',                                 'P-KYC-01'),
+                (11, 1, 'dispute_provisional_due',              'R-REGE-001',  'Provisional credit deadline',           NULL,  10,   'P10D',  'INFO',      'Provisional credit must be issued within 10 business days of a dispute.',                        'P-REGE-01'),
+                (12, 1, 'dispute_window',                       'R-REGE-002',  'Reg E dispute window',                  NULL,  NULL, 'P60D',  'INFO',      'Reg E disputes must be filed within 60 days of statement date.',                                  'P-REGE-01'),
+                (13, 2, 'wire_requires_sdn_screen',             'R-OFAC-002',  'Wire SDN screening required',           NULL,  NULL, NULL,    'VIOLATION', 'All outbound wires must screen against the OFAC SDN list.',                                       'P-OFAC-01'),
+                (14, 2, 'intl_wire_amount > 10000',             'R-WIRE-001',  'International wire senior approval',    10000, NULL, NULL,    'WARNING',   'International wires above $10,000 require senior officer approval.',                              'P-WIRE-01'),
+                (15, 2, 'wire_24h_total > 50000',               'R-WIRE-002',  'Same-day wire cap',                     50000, NULL, 'P24H',  'WARNING',   'Aggregate same-day wire activity above $50,000 requires hold-and-release review.',               'P-WIRE-01'),
+                (16, 1, 'card_geo_distinct_1h >= 2',            'R-FRAUD-003', 'Multi-geo card use within 1 hour',      NULL,  2,    'PT1H',  'WARNING',   'Card-present transactions in two or more countries within one hour.',                             'P-FRAUD-01'),
+                (17, 1, 'card_declined_count_1h >= 3',          'R-FRAUD-007', 'Velocity-triggered freeze',             NULL,  3,    'PT1H',  'VIOLATION', 'Three or more declined card authorisations within one hour auto-freeze the account.',            'P-FRAUD-01'),
+                (18, 2, 'cash_amount > 10000',                  'R-CTR-001',   'CTR filing required (cash > $10K)',     10000, NULL, NULL,    'VIOLATION', 'Cash transaction at or above $10,000 triggers a CTR filing.',                                    'P-CTR-01')
+              ;
