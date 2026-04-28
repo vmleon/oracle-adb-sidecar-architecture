@@ -26,3 +26,6 @@ datasources:
     username: postgres
     password: CHANGEME
     driver-class-name: org.postgresql.Driver
+selectai:
+  agents:
+    team: BANKING_INVESTIGATION_TEAM
