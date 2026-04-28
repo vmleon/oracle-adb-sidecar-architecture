@@ -1,0 +1,45 @@
+databaseChangeLog:
+  - changeSet:
+      id: postgres-003-alter-policies
+      author: adbsidecar
+      changes:
+        - addColumn:
+            tableName: policies
+            columns:
+              - column: { name: code, type: VARCHAR(20) }
+              - column: { name: category, type: VARCHAR(16) }
+              - column: { name: effective_at, type: DATE }
+
+  - changeSet:
+      id: postgres-003-policies-code-unique
+      author: adbsidecar
+      changes:
+        - addUniqueConstraint:
+            constraintName: uq_policies_code
+            tableName: policies
+            columnNames: code
+
+  - changeSet:
+      id: postgres-003-alter-rules
+      author: adbsidecar
+      changes:
+        - addColumn:
+            tableName: rules
+            columns:
+              - column: { name: code, type: VARCHAR(20) }
+              - column: { name: name, type: VARCHAR(120) }
+              - column: { name: threshold_amount, type: NUMERIC(12, 2) }
+              - column: { name: threshold_count, type: INTEGER }
+              - column: { name: threshold_window, type: VARCHAR(16) }
+              - column: { name: severity, type: VARCHAR(8) }
+              - column: { name: description, type: TEXT }
+              - column: { name: policy_code, type: VARCHAR(20) }
+
+  - changeSet:
+      id: postgres-003-rules-code-unique
+      author: adbsidecar
+      changes:
+        - addUniqueConstraint:
+            constraintName: uq_rules_code
+            tableName: rules
+            columnNames: code
