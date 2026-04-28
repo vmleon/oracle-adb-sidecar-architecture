@@ -1,0 +1,203 @@
+databaseChangeLog:
+  # ----- 1. Network ACL: allow ADB to reach OCI GenAI + Object Storage -----
+  - changeSet:
+      id: adb-005-network-acl
+      author: adbsidecar
+      changes:
+        - sql:
+            endDelimiter: "/"
+            splitStatements: false
+            sql: |
+              BEGIN
+                DBMS_NETWORK_ACL_ADMIN.APPEND_HOST_ACE(
+                  host => '*.oci.oraclecloud.com',
+                  ace  => xs$ace_type(privilege_list => xs$name_list('http'),
+                                      principal_name => 'ADMIN',
+                                      principal_type => xs_acl.ptype_db));
+              END;
+              /
+
+  # ----- 2. OCI API key credential (drop+create for idempotency) -----
+  - changeSet:
+      id: adb-005-cred-oci-genai
+      author: adbsidecar
+      runOnChange: true
+      changes:
+        - sql:
+            endDelimiter: "/"
+            splitStatements: false
+            sql: |
+              BEGIN
+                BEGIN DBMS_CLOUD.DROP_CREDENTIAL('OCI_API_KEY_CRED'); EXCEPTION WHEN OTHERS THEN NULL; END;
+                DBMS_CLOUD.CREATE_CREDENTIAL(
+                  credential_name => 'OCI_API_KEY_CRED',
+                  user_ocid       => '${oci_user_ocid}',
+                  tenancy_ocid    => '${oci_tenancy_ocid}',
+                  private_key     => '${oci_private_api_key}',
+                  fingerprint     => '${oci_fingerprint}'
+                );
+              END;
+              /
+
+  # ----- 3-7. Profiles -----
+  - changeSet:
+      id: adb-005-profile-txn
+      author: adbsidecar
+      runOnChange: true
+      changes:
+        - sql:
+            endDelimiter: "/"
+            splitStatements: false
+            sql: |
+              BEGIN
+                BEGIN DBMS_CLOUD_AI.DROP_PROFILE(profile_name => 'BANKING_NL2SQL_TXN', force => true); EXCEPTION WHEN OTHERS THEN NULL; END;
+                DBMS_CLOUD_AI.CREATE_PROFILE(
+                  profile_name => 'BANKING_NL2SQL_TXN',
+                  attributes   =>
+                  '{
+                    "provider": "oci",
+                    "credential_name": "OCI_API_KEY_CRED",
+                    "object_list": [
+                      {"owner": "ADMIN", "name": "V_BNK_CUSTOMERS"},
+                      {"owner": "ADMIN", "name": "V_BNK_ACCOUNTS"},
+                      {"owner": "ADMIN", "name": "V_BNK_TRANSACTIONS"},
+                      {"owner": "ADMIN", "name": "V_BNK_BRANCHES"}
+                    ],
+                    "region": "${genai_region}",
+                    "oci_compartment_id": "${oci_genai_compartment_id}",
+                    "oci_apiformat": "GENERIC"
+                  }');
+              END;
+              /
+
+  - changeSet:
+      id: adb-005-profile-compliance
+      author: adbsidecar
+      runOnChange: true
+      changes:
+        - sql:
+            endDelimiter: "/"
+            splitStatements: false
+            sql: |
+              BEGIN
+                BEGIN DBMS_CLOUD_AI.DROP_PROFILE(profile_name => 'BANKING_NL2SQL_COMPLIANCE', force => true); EXCEPTION WHEN OTHERS THEN NULL; END;
+                DBMS_CLOUD_AI.CREATE_PROFILE(
+                  profile_name => 'BANKING_NL2SQL_COMPLIANCE',
+                  attributes   =>
+                  '{
+                    "provider": "oci",
+                    "credential_name": "OCI_API_KEY_CRED",
+                    "object_list": [
+                      {"owner": "ADMIN", "name": "V_BNK_POLICIES"},
+                      {"owner": "ADMIN", "name": "V_BNK_RULES"}
+                    ],
+                    "region": "${genai_region}",
+                    "oci_compartment_id": "${oci_genai_compartment_id}",
+                    "oci_apiformat": "GENERIC"
+                  }');
+              END;
+              /
+
+  - changeSet:
+      id: adb-005-profile-care
+      author: adbsidecar
+      runOnChange: true
+      changes:
+        # Initial object_list excludes V_BNK_SUPPORT_TICKETS until the
+        # ADB heterogeneous-MongoDB gateway is fixed. See spec §14
+        # "Mongo flip-the-switch" for the one-line follow-up.
+        - sql:
+            endDelimiter: "/"
+            splitStatements: false
+            sql: |
+              BEGIN
+                BEGIN DBMS_CLOUD_AI.DROP_PROFILE(profile_name => 'BANKING_NL2SQL_CARE', force => true); EXCEPTION WHEN OTHERS THEN NULL; END;
+                DBMS_CLOUD_AI.CREATE_PROFILE(
+                  profile_name => 'BANKING_NL2SQL_CARE',
+                  attributes   =>
+                  '{
+                    "provider": "oci",
+                    "credential_name": "OCI_API_KEY_CRED",
+                    "object_list": [
+                      {"owner": "ADMIN", "name": "V_BNK_CUSTOMERS"}
+                    ],
+                    "region": "${genai_region}",
+                    "oci_compartment_id": "${oci_genai_compartment_id}",
+                    "oci_apiformat": "GENERIC"
+                  }');
+              END;
+              /
+
+  - changeSet:
+      id: adb-005-profile-rag
+      author: adbsidecar
+      runOnChange: true
+      changes:
+        - sql:
+            endDelimiter: "/"
+            splitStatements: false
+            sql: |
+              BEGIN
+                BEGIN DBMS_CLOUD_AI.DROP_PROFILE(profile_name => 'BANKING_RAG', force => true); EXCEPTION WHEN OTHERS THEN NULL; END;
+                DBMS_CLOUD_AI.CREATE_PROFILE(
+                  profile_name => 'BANKING_RAG',
+                  attributes   =>
+                  '{
+                    "provider": "oci",
+                    "credential_name": "OCI_API_KEY_CRED",
+                    "vector_index_name": "BANKING_POLICY_INDEX",
+                    "region": "${genai_region}",
+                    "oci_compartment_id": "${oci_genai_compartment_id}",
+                    "oci_apiformat": "GENERIC"
+                  }');
+              END;
+              /
+
+  - changeSet:
+      id: adb-005-profile-chat
+      author: adbsidecar
+      runOnChange: true
+      changes:
+        - sql:
+            endDelimiter: "/"
+            splitStatements: false
+            sql: |
+              BEGIN
+                BEGIN DBMS_CLOUD_AI.DROP_PROFILE(profile_name => 'BANKING_CHAT', force => true); EXCEPTION WHEN OTHERS THEN NULL; END;
+                DBMS_CLOUD_AI.CREATE_PROFILE(
+                  profile_name => 'BANKING_CHAT',
+                  attributes   =>
+                  '{
+                    "provider": "oci",
+                    "credential_name": "OCI_API_KEY_CRED",
+                    "region": "${genai_region}",
+                    "oci_compartment_id": "${oci_genai_compartment_id}",
+                    "oci_apiformat": "GENERIC"
+                  }');
+              END;
+              /
+
+  # ----- 8. Vector index over the policy markdown bucket -----
+  - changeSet:
+      id: adb-005-vector-index
+      author: adbsidecar
+      runOnChange: true
+      changes:
+        - sql:
+            endDelimiter: "/"
+            splitStatements: false
+            sql: |
+              BEGIN
+                BEGIN DBMS_CLOUD_AI.DROP_VECTOR_INDEX(index_name => 'BANKING_POLICY_INDEX', force => true);
+                  EXCEPTION WHEN OTHERS THEN IF SQLCODE != -20000 THEN RAISE; END IF;
+                END;
+                DBMS_CLOUD_AI.CREATE_VECTOR_INDEX(
+                  index_name => 'BANKING_POLICY_INDEX',
+                  attributes => '{"vector_db_provider":"oracle",
+                                  "location":"https://objectstorage.${genai_region}.oraclecloud.com/n/${rag_bucket_namespace}/b/${rag_bucket_name}/o/",
+                                  "object_storage_credential_name":"OCI_API_KEY_CRED",
+                                  "profile_name":"BANKING_RAG",
+                                  "chunk_size":1500,
+                                  "chunk_overlap":300}');
+              END;
+              /
