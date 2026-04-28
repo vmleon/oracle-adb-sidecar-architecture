@@ -75,7 +75,13 @@ cat <<EOT >> /home/opc/ansible_params.json
   "liquibase_postgres_dir": "/home/opc/ops/database/liquibase/postgres",
   "mongo_init_js": "/home/opc/ops/database/mongo/init.js",
   "rag_bucket_name": "${rag_bucket_name}",
-  "rag_bucket_namespace": "${rag_bucket_namespace}"
+  "rag_bucket_namespace": "${rag_bucket_namespace}",
+  "oci_user_ocid": "${oci_user_ocid}",
+  "oci_tenancy_ocid": "${oci_tenancy_ocid}",
+  "oci_fingerprint": "${oci_fingerprint}",
+  "oci_private_api_key": ${oci_private_api_key_json},
+  "oci_genai_region": "${oci_genai_region}",
+  "oci_genai_compartment_id": "${oci_genai_compartment_id}"
 }
 EOT
 

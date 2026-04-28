@@ -18,6 +18,12 @@ locals {
     front_private_ip          = var.front_private_ip
     rag_bucket_name           = var.rag_bucket_name
     rag_bucket_namespace      = var.rag_bucket_namespace
+    oci_user_ocid                    = var.oci_user_ocid
+    oci_tenancy_ocid                 = var.oci_tenancy_ocid
+    oci_fingerprint                  = var.oci_fingerprint
+    oci_private_api_key_json         = jsonencode(var.oci_private_api_key)
+    oci_genai_region                 = var.oci_genai_region
+    oci_genai_compartment_id         = var.oci_genai_compartment_id
   })
 }
 

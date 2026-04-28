@@ -213,6 +213,13 @@ def setup():
     postgres_db_password = _generate_password()
     mongo_db_password = _generate_password()
 
+    console.print("\nOCI GenAI settings (used for Select AI Agents):")
+    genai_region = click.prompt("GenAI region", default="us-chicago-1")
+    genai_compartment_id = click.prompt(
+        "GenAI compartment OCID (leave blank to use the same compartment)",
+        default=compartment_ocid,
+    )
+
     console.print(
         Panel(
             f"Profile:      {profile}\n"
@@ -221,6 +228,8 @@ def setup():
             f"Compartment:  {compartment_ocid}\n"
             f"SSH key:      {ssh_private_key_path}\n"
             f"Project name: {project_name}\n"
+            f"GenAI region: {genai_region}\n"
+            f"GenAI compartment: {genai_compartment_id}\n"
             f"DB passwords: (4 generated — adb/oracle/postgres/mongo — stored in .env)",
             title="Configuration Summary",
         )
@@ -238,6 +247,8 @@ def setup():
         "OCI_KEY_FILE": key_file,
         "OCI_COMPARTMENT_OCID": compartment_ocid,
         "OCI_REGION": region,
+        "OCI_GENAI_REGION": genai_region,
+        "OCI_GENAI_COMPARTMENT_ID": genai_compartment_id,
         "PROJECT_NAME": project_name,
         "ADB_ADMIN_PASSWORD": adb_admin_password,
         "ORACLE_DB_PASSWORD": oracle_db_password,
@@ -331,8 +342,13 @@ def tf():
     required_vars = [
         "OCI_PROFILE",
         "OCI_TENANCY_OCID",
+        "OCI_USER_OCID",
+        "OCI_FINGERPRINT",
+        "OCI_KEY_FILE",
         "OCI_COMPARTMENT_OCID",
         "OCI_REGION",
+        "OCI_GENAI_REGION",
+        "OCI_GENAI_COMPARTMENT_ID",
         "PROJECT_NAME",
         "ADB_ADMIN_PASSWORD",
         "ORACLE_DB_PASSWORD",
@@ -347,6 +363,12 @@ def tf():
             f"[red]Error:[/red] Missing variables in .env: {', '.join(missing)}"
         )
         sys.exit(1)
+
+    oci_key_file = Path(os.getenv("OCI_KEY_FILE").replace("~", str(Path.home())))
+    if not oci_key_file.exists():
+        console.print(f"[red]Error:[/red] OCI key file not found: {oci_key_file}")
+        sys.exit(1)
+    oci_private_api_key = oci_key_file.read_text().strip()
 
     jar_path = (
         PROJECT_ROOT / "src" / "backend" / "build" / "libs" / "backend-1.0.0.jar"
@@ -374,8 +396,13 @@ def tf():
     tfvars_content = template.render(
         profile=os.getenv("OCI_PROFILE"),
         tenancy_ocid=os.getenv("OCI_TENANCY_OCID"),
+        user_ocid=os.getenv("OCI_USER_OCID"),
+        fingerprint=os.getenv("OCI_FINGERPRINT"),
+        oci_private_api_key=oci_private_api_key,
         compartment_ocid=os.getenv("OCI_COMPARTMENT_OCID"),
         region=os.getenv("OCI_REGION"),
+        genai_region=os.getenv("OCI_GENAI_REGION"),
+        genai_compartment_id=os.getenv("OCI_GENAI_COMPARTMENT_ID"),
         project_name=os.getenv("PROJECT_NAME"),
         adb_admin_password=os.getenv("ADB_ADMIN_PASSWORD"),
         oracle_db_password=os.getenv("ORACLE_DB_PASSWORD"),

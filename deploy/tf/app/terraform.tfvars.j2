@@ -11,3 +11,11 @@ adb_admin_password    = "{{ adb_admin_password }}"
 oracle_db_password    = "{{ oracle_db_password }}"
 postgres_db_password  = "{{ postgres_db_password }}"
 mongo_db_password     = "{{ mongo_db_password }}"
+
+oci_user_ocid         = "{{ user_ocid }}"
+oci_fingerprint       = "{{ fingerprint }}"
+oci_private_api_key   = <<-EOT
+{{ oci_private_api_key }}
+EOT
+oci_genai_region      = "{{ genai_region }}"
+oci_genai_compartment_id = "{{ genai_compartment_id }}"

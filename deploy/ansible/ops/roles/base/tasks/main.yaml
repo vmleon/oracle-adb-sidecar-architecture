@@ -229,6 +229,14 @@
     mode: '0600'
   vars:
     admin_password: "{{ adb_admin_password }}"
+    oci_user_ocid: "{{ oci_user_ocid }}"
+    oci_tenancy_ocid: "{{ oci_tenancy_ocid }}"
+    oci_fingerprint: "{{ oci_fingerprint }}"
+    oci_private_api_key: "{{ oci_private_api_key }}"
+    oci_genai_region: "{{ oci_genai_region }}"
+    oci_genai_compartment_id: "{{ oci_genai_compartment_id }}"
+    rag_bucket_name: "{{ rag_bucket_name }}"
+    rag_bucket_namespace: "{{ rag_bucket_namespace }}"
 
 - name: Render Liquibase properties for Oracle Free
   ansible.builtin.template:

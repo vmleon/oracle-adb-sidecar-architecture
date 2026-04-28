@@ -110,6 +110,12 @@ module "ops" {
   front_private_ip                   = module.front.private_ip
   rag_bucket_name                    = oci_objectstorage_bucket.banking_rag_docs.name
   rag_bucket_namespace               = oci_objectstorage_bucket.banking_rag_docs.namespace
+  oci_user_ocid                      = var.oci_user_ocid
+  oci_tenancy_ocid                   = var.tenancy_ocid
+  oci_fingerprint                    = var.oci_fingerprint
+  oci_private_api_key                = var.oci_private_api_key
+  oci_genai_region                   = var.oci_genai_region
+  oci_genai_compartment_id           = var.oci_genai_compartment_id
 }
 
 resource "local_file" "adb_wallet_file" {

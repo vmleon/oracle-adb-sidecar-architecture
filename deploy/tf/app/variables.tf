@@ -76,3 +76,28 @@ variable "artifacts_par_expiration_in_days" {
   type    = number
   default = 7
 }
+
+variable "oci_user_ocid" {
+  type      = string
+  sensitive = true
+}
+
+variable "oci_fingerprint" {
+  type      = string
+  sensitive = true
+}
+
+variable "oci_private_api_key" {
+  type      = string
+  sensitive = true
+}
+
+variable "oci_genai_region" {
+  type    = string
+  default = "us-chicago-1"
+}
+
+variable "oci_genai_compartment_id" {
+  type      = string
+  sensitive = true
+}
