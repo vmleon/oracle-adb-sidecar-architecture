@@ -286,6 +286,51 @@
   changed_when: "'Mongo init.js complete' in mongo_init_result.stdout"
   no_log: true
 
+# --- Upload RAG policy docs to OCI Object Storage (must precede ADB Liquibase
+#     so the vector index changeset finds the docs already in the bucket) ---
+
+- name: Ensure /root/.oci directory exists
+  ansible.builtin.file:
+    path: /root/.oci
+    state: directory
+    mode: '0700'
+
+- name: Write OCI CLI private API key
+  ansible.builtin.copy:
+    dest: /root/.oci/oci_api_key.pem
+    content: "{{ oci_private_api_key }}"
+    mode: '0600'
+  no_log: true
+
+- name: Write OCI CLI config for api_key auth
+  ansible.builtin.copy:
+    dest: /root/.oci/config
+    mode: '0600'
+    content: |
+      [DEFAULT]
+      user={{ oci_user_ocid }}
+      tenancy={{ oci_tenancy_ocid }}
+      fingerprint={{ oci_fingerprint }}
+      key_file=/root/.oci/oci_api_key.pem
+      region={{ oci_genai_region }}
+
+- name: Upload banking policy docs to RAG bucket
+  ansible.builtin.command:
+    cmd: >
+      oci os object put
+      --bucket-name "{{ rag_bucket_name }}"
+      --namespace "{{ rag_bucket_namespace }}"
+      --file "{{ item }}"
+      --name "{{ item | basename }}"
+      --force
+  loop:
+    - /home/opc/ops/database/banking-policy-docs/aml-and-ctr-procedures.md
+    - /home/opc/ops/database/banking-policy-docs/kyc-and-cip-requirements.md
+    - /home/opc/ops/database/banking-policy-docs/ofac-sanctions-screening.md
+    - /home/opc/ops/database/banking-policy-docs/reg-e-dispute-handling.md
+    - /home/opc/ops/database/banking-policy-docs/wire-transfer-sop.md
+  changed_when: true
+
 - name: Run Liquibase update against ADB (credentials, DB_LINKs, banking views) — robust against ORA-17008
   # ADB occasionally drops the JDBC session mid-Liquibase (ORA-17008). The
   # dropped run leaves a stale DATABASECHANGELOGLOCK row. `block/rescue`
