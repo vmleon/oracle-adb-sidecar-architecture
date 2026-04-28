@@ -201,3 +201,171 @@ databaseChangeLog:
                                   "chunk_overlap":300}');
               END;
               /
+
+  # ----- 9. Tools (4): SQL × 3, RAG × 1 -----
+  - changeSet:
+      id: adb-005-tools
+      author: adbsidecar
+      runOnChange: true
+      changes:
+        - sql:
+            endDelimiter: "/"
+            splitStatements: false
+            sql: |
+              BEGIN
+                BEGIN DBMS_CLOUD_AI_AGENT.DROP_TOOL(tool_name => 'TXN_SQL_TOOL',         force => true); EXCEPTION WHEN OTHERS THEN NULL; END;
+                BEGIN DBMS_CLOUD_AI_AGENT.DROP_TOOL(tool_name => 'COMPLIANCE_SQL_TOOL',  force => true); EXCEPTION WHEN OTHERS THEN NULL; END;
+                BEGIN DBMS_CLOUD_AI_AGENT.DROP_TOOL(tool_name => 'COMPLIANCE_RAG_TOOL',  force => true); EXCEPTION WHEN OTHERS THEN NULL; END;
+                BEGIN DBMS_CLOUD_AI_AGENT.DROP_TOOL(tool_name => 'CARE_SQL_TOOL',        force => true); EXCEPTION WHEN OTHERS THEN NULL; END;
+
+                DBMS_CLOUD_AI_AGENT.CREATE_TOOL(
+                  tool_name  => 'TXN_SQL_TOOL',
+                  attributes => '{"tool_type":"SQL","tool_params":{"profile_name":"BANKING_NL2SQL_TXN"}}'
+                );
+                DBMS_CLOUD_AI_AGENT.CREATE_TOOL(
+                  tool_name  => 'COMPLIANCE_SQL_TOOL',
+                  attributes => '{"tool_type":"SQL","tool_params":{"profile_name":"BANKING_NL2SQL_COMPLIANCE"}}'
+                );
+                DBMS_CLOUD_AI_AGENT.CREATE_TOOL(
+                  tool_name  => 'COMPLIANCE_RAG_TOOL',
+                  attributes => '{"tool_type":"RAG","tool_params":{"profile_name":"BANKING_RAG"}}'
+                );
+                DBMS_CLOUD_AI_AGENT.CREATE_TOOL(
+                  tool_name  => 'CARE_SQL_TOOL',
+                  attributes => '{"tool_type":"SQL","tool_params":{"profile_name":"BANKING_NL2SQL_CARE"}}'
+                );
+              END;
+              /
+
+  # ----- 10. Agents (4) -----
+  - changeSet:
+      id: adb-005-agents
+      author: adbsidecar
+      runOnChange: true
+      changes:
+        - sql:
+            endDelimiter: "/"
+            splitStatements: false
+            sql: |
+              BEGIN
+                BEGIN DBMS_CLOUD_AI_AGENT.DROP_AGENT(agent_name => 'TRANSACTION_ANALYST',    force => true); EXCEPTION WHEN OTHERS THEN NULL; END;
+                BEGIN DBMS_CLOUD_AI_AGENT.DROP_AGENT(agent_name => 'COMPLIANCE_OFFICER',     force => true); EXCEPTION WHEN OTHERS THEN NULL; END;
+                BEGIN DBMS_CLOUD_AI_AGENT.DROP_AGENT(agent_name => 'CUSTOMER_CARE_LIAISON',  force => true); EXCEPTION WHEN OTHERS THEN NULL; END;
+                BEGIN DBMS_CLOUD_AI_AGENT.DROP_AGENT(agent_name => 'CASE_SYNTHESIZER',       force => true); EXCEPTION WHEN OTHERS THEN NULL; END;
+
+                DBMS_CLOUD_AI_AGENT.CREATE_AGENT(
+                  agent_name => 'TRANSACTION_ANALYST',
+                  attributes => '{
+                    "profile_name": "BANKING_NL2SQL_TXN",
+                    "role": "You are a bank transaction analyst. When given a customer or transaction question, retrieve concrete facts only: which accounts, which transactions, amounts, dates, counterparties, geo, status. Do not interpret, recommend, or speculate. Return findings as a bullet list with one fact per line.",
+                    "enable_human_tool": "false"
+                  }'
+                );
+
+                DBMS_CLOUD_AI_AGENT.CREATE_AGENT(
+                  agent_name => 'COMPLIANCE_OFFICER',
+                  attributes => '{
+                    "profile_name": "BANKING_NL2SQL_COMPLIANCE",
+                    "role": "You are a bank compliance officer. Given transaction facts from the analyst, identify which AML, KYC, Reg E, OFAC, or fraud rules and policies apply. Use the SQL tool for rule data and the RAG tool for policy text. Cite rule codes (e.g. R-AML-005) and quote relevant policy sections. Classify each finding as INFO, WARNING, or VIOLATION.",
+                    "enable_human_tool": "false"
+                  }'
+                );
+
+                DBMS_CLOUD_AI_AGENT.CREATE_AGENT(
+                  agent_name => 'CUSTOMER_CARE_LIAISON',
+                  attributes => '{
+                    "profile_name": "BANKING_NL2SQL_CARE",
+                    "role": "You are a customer care liaison. Given a customer context, retrieve customer KYC status, risk tier, country, and join date from V_BNK_CUSTOMERS. Note: support-ticket lookups are temporarily unavailable; do not fabricate ticket data. If the request requires ticket history, say so explicitly.",
+                    "enable_human_tool": "false"
+                  }'
+                );
+
+                DBMS_CLOUD_AI_AGENT.CREATE_AGENT(
+                  agent_name => 'CASE_SYNTHESIZER',
+                  attributes => '{
+                    "profile_name": "BANKING_CHAT",
+                    "role": "You are a senior banking case manager. Given transaction facts, a compliance assessment, and customer-care context, produce a final case file with three sections: Findings, Risk rating (LOW/MEDIUM/HIGH), Recommended next actions. Maximum 200 words. Be concrete; do not invent facts.",
+                    "enable_human_tool": "false"
+                  }'
+                );
+              END;
+              /
+
+  # ----- 11. Tasks (4) -----
+  - changeSet:
+      id: adb-005-tasks
+      author: adbsidecar
+      runOnChange: true
+      changes:
+        - sql:
+            endDelimiter: "/"
+            splitStatements: false
+            sql: |
+              BEGIN
+                BEGIN DBMS_CLOUD_AI_AGENT.DROP_TASK(task_name => 'PULL_TXN_FACTS',      force => true); EXCEPTION WHEN OTHERS THEN NULL; END;
+                BEGIN DBMS_CLOUD_AI_AGENT.DROP_TASK(task_name => 'ASSESS_COMPLIANCE',   force => true); EXCEPTION WHEN OTHERS THEN NULL; END;
+                BEGIN DBMS_CLOUD_AI_AGENT.DROP_TASK(task_name => 'GATHER_CARE_CONTEXT', force => true); EXCEPTION WHEN OTHERS THEN NULL; END;
+                BEGIN DBMS_CLOUD_AI_AGENT.DROP_TASK(task_name => 'SYNTHESIZE_CASE',     force => true); EXCEPTION WHEN OTHERS THEN NULL; END;
+
+                DBMS_CLOUD_AI_AGENT.CREATE_TASK(
+                  task_name  => 'PULL_TXN_FACTS',
+                  attributes => '{
+                    "instruction": "Retrieve transactional facts relevant to the user request: {query}. Use the SQL tool. Return only facts; do not analyse.",
+                    "tools": ["TXN_SQL_TOOL"]
+                  }'
+                );
+
+                DBMS_CLOUD_AI_AGENT.CREATE_TASK(
+                  task_name  => 'ASSESS_COMPLIANCE',
+                  attributes => '{
+                    "instruction": "Given the user request {query} and the transactional facts in your input, identify all applicable rules and policies. Use the SQL tool for rule lookups and the RAG tool for policy citations. List each finding with rule code, severity, and a short explanation.",
+                    "tools": ["COMPLIANCE_SQL_TOOL", "COMPLIANCE_RAG_TOOL"],
+                    "input": "PULL_TXN_FACTS"
+                  }'
+                );
+
+                DBMS_CLOUD_AI_AGENT.CREATE_TASK(
+                  task_name  => 'GATHER_CARE_CONTEXT',
+                  attributes => '{
+                    "instruction": "Given the user request {query} and the transactional facts in your input, retrieve relevant customer KYC status from V_BNK_CUSTOMERS. Support-ticket lookups are unavailable in this build.",
+                    "tools": ["CARE_SQL_TOOL"],
+                    "input": "PULL_TXN_FACTS"
+                  }'
+                );
+
+                DBMS_CLOUD_AI_AGENT.CREATE_TASK(
+                  task_name  => 'SYNTHESIZE_CASE',
+                  attributes => '{
+                    "instruction": "Compose the final case file for the user request: {query}. Combine the compliance assessment and the customer-care context provided in your input. Output sections: Findings, Risk rating, Recommended next actions.",
+                    "input": "ASSESS_COMPLIANCE,GATHER_CARE_CONTEXT"
+                  }'
+                );
+              END;
+              /
+
+  # ----- 12. Team -----
+  - changeSet:
+      id: adb-005-team
+      author: adbsidecar
+      runOnChange: true
+      changes:
+        - sql:
+            endDelimiter: "/"
+            splitStatements: false
+            sql: |
+              BEGIN
+                BEGIN DBMS_CLOUD_AI_AGENT.DROP_TEAM(team_name => 'BANKING_INVESTIGATION_TEAM', force => true); EXCEPTION WHEN OTHERS THEN NULL; END;
+                DBMS_CLOUD_AI_AGENT.CREATE_TEAM(
+                  team_name  => 'BANKING_INVESTIGATION_TEAM',
+                  attributes => '{
+                    "agents": [
+                      {"name":"TRANSACTION_ANALYST",    "task":"PULL_TXN_FACTS"},
+                      {"name":"COMPLIANCE_OFFICER",     "task":"ASSESS_COMPLIANCE"},
+                      {"name":"CUSTOMER_CARE_LIAISON",  "task":"GATHER_CARE_CONTEXT"},
+                      {"name":"CASE_SYNTHESIZER",       "task":"SYNTHESIZE_CASE"}
+                    ],
+                    "process": "sequential"
+                  }'
+                );
+              END;
+              /

@@ -4,3 +4,4 @@ databaseChangeLog:
   - include: { file: 003-measurements.yaml, relativeToChangelogFile: true }
   - include:
       { file: 004-banking-views-extended.yaml, relativeToChangelogFile: true }
+  - include: { file: 005-select-ai-agents.yaml, relativeToChangelogFile: true }
