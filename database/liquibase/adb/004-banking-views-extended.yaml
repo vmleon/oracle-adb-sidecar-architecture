@@ -1,0 +1,130 @@
+databaseChangeLog:
+  # ----- Oracle Free side (ORAFREE_LINK exists from 002-db-links.yaml) -----
+  - changeSet:
+      id: adb-004-view-bnk-customers
+      author: adbsidecar
+      changes:
+        - sql:
+            endDelimiter: "/"
+            splitStatements: false
+            sql: |
+              CREATE OR REPLACE VIEW V_BNK_CUSTOMERS AS
+              SELECT id, name, email, country_code, kyc_status, risk_tier, joined_at
+              FROM customers@ORAFREE_LINK
+              /
+      rollback:
+        - sql: { sql: DROP VIEW V_BNK_CUSTOMERS }
+
+  - changeSet:
+      id: adb-004-view-bnk-branches
+      author: adbsidecar
+      changes:
+        - sql:
+            endDelimiter: "/"
+            splitStatements: false
+            sql: |
+              CREATE OR REPLACE VIEW V_BNK_BRANCHES AS
+              SELECT id, branch_code, city, country_code, manager_name
+              FROM branches@ORAFREE_LINK
+              /
+      rollback:
+        - sql: { sql: DROP VIEW V_BNK_BRANCHES }
+
+  - changeSet:
+      id: adb-004-view-bnk-accounts
+      author: adbsidecar
+      changes:
+        - sql:
+            endDelimiter: "/"
+            splitStatements: false
+            sql: |
+              CREATE OR REPLACE VIEW V_BNK_ACCOUNTS AS
+              SELECT id, customer_id, branch_id, account_type, currency, balance, opened_at, status, customer_name
+              FROM accounts@ORAFREE_LINK
+              /
+      rollback:
+        - sql: { sql: DROP VIEW V_BNK_ACCOUNTS }
+
+  - changeSet:
+      id: adb-004-view-bnk-transactions
+      author: adbsidecar
+      changes:
+        - sql:
+            endDelimiter: "/"
+            splitStatements: false
+            sql: |
+              CREATE OR REPLACE VIEW V_BNK_TRANSACTIONS AS
+              SELECT id, account_id, txn_type, currency, amount, channel, merchant, merchant_country,
+                     counterparty_account, status, occurred_at, tx_date
+              FROM transactions@ORAFREE_LINK
+              /
+      rollback:
+        - sql: { sql: DROP VIEW V_BNK_TRANSACTIONS }
+
+  # ----- Postgres side (PG_LINK exists; "public" quoting per 002 workaround) -----
+  - changeSet:
+      id: adb-004-view-bnk-policies
+      author: adbsidecar
+      changes:
+        - sql:
+            endDelimiter: "/"
+            splitStatements: false
+            sql: |
+              CREATE OR REPLACE VIEW V_BNK_POLICIES AS
+              SELECT "id" AS id, "code" AS code, "name" AS name, "description" AS description,
+                     "category" AS category, "effective_at" AS effective_at
+              FROM "public"."policies"@PG_LINK
+              /
+      rollback:
+        - sql: { sql: DROP VIEW V_BNK_POLICIES }
+
+  - changeSet:
+      id: adb-004-view-bnk-rules
+      author: adbsidecar
+      changes:
+        - sql:
+            endDelimiter: "/"
+            splitStatements: false
+            sql: |
+              CREATE OR REPLACE VIEW V_BNK_RULES AS
+              SELECT "id" AS id, "code" AS code, "name" AS name, "description" AS description,
+                     "policy_id" AS policy_id, "policy_code" AS policy_code,
+                     "expression" AS expression,
+                     "threshold_amount" AS threshold_amount,
+                     "threshold_count" AS threshold_count,
+                     "threshold_window" AS threshold_window,
+                     "severity" AS severity
+              FROM "public"."rules"@PG_LINK
+              /
+      rollback:
+        - sql: { sql: DROP VIEW V_BNK_RULES }
+
+  # ----- MongoDB side — DEFERRED -----
+  # Uncomment the changeset below once
+  # docs/ISSUE_ADB_HETEROGENEOUS_MONGODB_OBJECT_NOT_FOUND.md is resolved
+  # AND simultaneously add V_BNK_SUPPORT_TICKETS to BANKING_NL2SQL_CARE's
+  # object_list (see 005-select-ai-agents.yaml, changeset adb-005-profile-care).
+  #
+  # - changeSet:
+  #     id: adb-004-view-support-tickets-deferred
+  #     author: adbsidecar
+  #     changes:
+  #       - sql:
+  #           endDelimiter: "/"
+  #           splitStatements: false
+  #           sql: |
+  #             CREATE OR REPLACE VIEW V_BNK_SUPPORT_TICKETS AS
+  #             SELECT "ticket_id"   AS id,
+  #                    "customer_id" AS customer_id,
+  #                    "customer"    AS customer,
+  #                    "subject"     AS subject,
+  #                    "body"        AS body,
+  #                    "channel"     AS channel,
+  #                    "status"      AS status,
+  #                    "priority"    AS priority,
+  #                    "created_at"  AS created_at,
+  #                    "updated_at"  AS updated_at
+  #             FROM "support_tickets"@MONGO_LINK
+  #             /
+  #     rollback:
+  #       - sql: { sql: DROP VIEW V_BNK_SUPPORT_TICKETS }
