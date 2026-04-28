@@ -1,0 +1,131 @@
+databaseChangeLog:
+  - changeSet:
+      id: oracle-003-create-customers
+      author: adbsidecar
+      changes:
+        - createTable:
+            tableName: customers
+            columns:
+              - column:
+                  name: id
+                  type: NUMBER(10)
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: name
+                  type: VARCHAR2(100)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: email
+                  type: VARCHAR2(120)
+              - column:
+                  name: country_code
+                  type: VARCHAR2(2)
+              - column:
+                  name: kyc_status
+                  type: VARCHAR2(16)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: risk_tier
+                  type: VARCHAR2(8)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: joined_at
+                  type: DATE
+
+  - changeSet:
+      id: oracle-003-customers-checks
+      author: adbsidecar
+      changes:
+        - sql:
+            sql: |
+              ALTER TABLE customers ADD CONSTRAINT customers_kyc_chk
+                CHECK (kyc_status IN ('VERIFIED','PENDING','EXPIRED'))
+        - sql:
+            sql: |
+              ALTER TABLE customers ADD CONSTRAINT customers_risk_chk
+                CHECK (risk_tier IN ('LOW','MEDIUM','HIGH'))
+
+  - changeSet:
+      id: oracle-003-create-branches
+      author: adbsidecar
+      changes:
+        - createTable:
+            tableName: branches
+            columns:
+              - column:
+                  name: id
+                  type: NUMBER(10)
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: branch_code
+                  type: VARCHAR2(8)
+                  constraints:
+                    nullable: false
+                    unique: true
+              - column:
+                  name: city
+                  type: VARCHAR2(80)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: country_code
+                  type: VARCHAR2(2)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: manager_name
+                  type: VARCHAR2(100)
+
+  - changeSet:
+      id: oracle-003-alter-accounts
+      author: adbsidecar
+      changes:
+        - addColumn:
+            tableName: accounts
+            columns:
+              - column: { name: customer_id, type: NUMBER(10) }
+              - column: { name: branch_id, type: NUMBER(10) }
+              - column: { name: account_type, type: VARCHAR2(16) }
+              - column: { name: currency, type: VARCHAR2(3) }
+              - column: { name: opened_at, type: DATE }
+              - column: { name: status, type: VARCHAR2(8) }
+
+  - changeSet:
+      id: oracle-003-accounts-fks
+      author: adbsidecar
+      changes:
+        - addForeignKeyConstraint:
+            constraintName: fk_accounts_customer
+            baseTableName: accounts
+            baseColumnNames: customer_id
+            referencedTableName: customers
+            referencedColumnNames: id
+        - addForeignKeyConstraint:
+            constraintName: fk_accounts_branch
+            baseTableName: accounts
+            baseColumnNames: branch_id
+            referencedTableName: branches
+            referencedColumnNames: id
+
+  - changeSet:
+      id: oracle-003-alter-transactions
+      author: adbsidecar
+      changes:
+        - addColumn:
+            tableName: transactions
+            columns:
+              - column: { name: txn_type, type: VARCHAR2(8) }
+              - column: { name: currency, type: VARCHAR2(3) }
+              - column: { name: channel, type: VARCHAR2(8) }
+              - column: { name: merchant, type: VARCHAR2(80) }
+              - column: { name: merchant_country, type: VARCHAR2(2) }
+              - column: { name: counterparty_account, type: VARCHAR2(40) }
+              - column: { name: status, type: VARCHAR2(8) }
+              - column: { name: occurred_at, type: TIMESTAMP }
