@@ -10,6 +10,8 @@ import org.springframework.jdbc.core.RowMapper;
 import java.util.List;
 import java.util.Map;
 
+import org.mockito.ArgumentMatchers;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -33,9 +35,15 @@ class AgentsServiceTest {
                 .thenReturn("EXEC-42");
         when(jdbc.queryForMap(contains("USER_AI_AGENT_TEAM_HISTORY"), any()))
                 .thenReturn(Map.of("TEAM_NAME", "BANKING_INVESTIGATION_TEAM", "STATE", "SUCCEEDED"));
-        when(jdbc.query(contains("USER_AI_AGENT_TASK_HISTORY"), any(RowMapper.class), any()))
+        when(jdbc.query(
+                contains("USER_AI_AGENT_TASK_HISTORY"),
+                ArgumentMatchers.<RowMapper<AgentTrace.TaskTrace>>any(),
+                ArgumentMatchers.<Object>any()))
                 .thenReturn(List.<AgentTrace.TaskTrace>of());
-        when(jdbc.query(contains("USER_AI_AGENT_TOOL_HISTORY"), any(RowMapper.class), any()))
+        when(jdbc.query(
+                contains("USER_AI_AGENT_TOOL_HISTORY"),
+                ArgumentMatchers.<RowMapper<AgentTrace.ToolTrace>>any(),
+                ArgumentMatchers.<Object>any()))
                 .thenReturn(List.<AgentTrace.ToolTrace>of());
 
         AgentRunResponse resp = service.runTeam("Hello", "conv-1");
