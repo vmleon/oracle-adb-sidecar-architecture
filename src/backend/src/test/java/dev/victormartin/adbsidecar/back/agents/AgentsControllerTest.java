@@ -6,7 +6,7 @@ import dev.victormartin.adbsidecar.back.agents.dto.AgentRunResponse;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -20,7 +20,7 @@ class AgentsControllerTest {
 
     @Autowired MockMvc mvc;
     @Autowired ObjectMapper json;
-    @MockBean AgentsService service;
+    @MockitoBean AgentsService service;
 
     @Test
     void post_agents_returns_200_with_run_response() throws Exception {
