@@ -9,6 +9,15 @@ const LABELS: Record<ComponentName, string> = {
   agentsTeam: 'Agents team',
 };
 
+// User-facing wording. "Offline" is intentionally vague — we cannot tell
+// from a failed probe whether the component is broken or still being
+// provisioned, so a softer label avoids alarming the user on cold start.
+const STATE_LABELS: Record<ComponentState, string> = {
+  ready: 'Ready',
+  bootstrapping: 'Bootstrapping',
+  error: 'Offline',
+};
+
 @Component({
   selector: 'app-status-pill',
   template: `
@@ -20,7 +29,7 @@ const LABELS: Record<ComponentName, string> = {
           <div class="row">
             <span [class]="'dot ' + row.state"></span>
             <span class="name">{{ row.label }}</span>
-            <span class="state">{{ row.state }}</span>
+            <span class="state">{{ stateLabel(row.state) }}</span>
           </div>
         }
       </div>
@@ -72,7 +81,7 @@ const LABELS: Record<ComponentName, string> = {
       padding: 0.2rem 0.25rem;
     }
     .name { font-size: 0.85rem; }
-    .state { font-size: 0.75rem; color: #6B6560; text-transform: capitalize; }
+    .state { font-size: 0.75rem; color: #6B6560; }
   `,
 })
 export class StatusPillComponent {
@@ -88,4 +97,8 @@ export class StatusPillComponent {
       state: c[key] as ComponentState,
     }));
   });
+
+  stateLabel(state: ComponentState): string {
+    return STATE_LABELS[state];
+  }
 }
