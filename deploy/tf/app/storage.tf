@@ -9,6 +9,25 @@ resource "oci_objectstorage_bucket" "banking_rag_docs" {
   versioning     = "Disabled"
 }
 
+# OCI buckets refuse to delete if non-empty and the provider has no
+# force_destroy. The Ansible role uploads the policy markdown docs into
+# this bucket, so terraform destroy fails with 409-BucketNotEmpty unless
+# we sweep it first. This null_resource depends on the bucket, so it is
+# destroyed *before* the bucket and its destroy-time local-exec empties
+# it. Requires `oci` CLI on the machine running terraform.
+resource "null_resource" "empty_banking_rag_docs_on_destroy" {
+  triggers = {
+    bucket_name = oci_objectstorage_bucket.banking_rag_docs.name
+    namespace   = oci_objectstorage_bucket.banking_rag_docs.namespace
+    profile     = var.config_file_profile
+  }
+
+  provisioner "local-exec" {
+    when    = destroy
+    command = "oci os object bulk-delete --profile '${self.triggers.profile}' --namespace '${self.triggers.namespace}' --bucket-name '${self.triggers.bucket_name}' --force || true"
+  }
+}
+
 resource "oci_objectstorage_bucket" "artifacts_bucket" {
   compartment_id = var.compartment_ocid
   name           = "artifacts_${local.project_name}${local.deploy_id}"
