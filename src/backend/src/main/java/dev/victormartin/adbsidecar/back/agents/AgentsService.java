@@ -71,7 +71,7 @@ public class AgentsService {
         String paramsJson = "{\"conversation_id\":\"" + conversationId + "\"}";
 
         long t0 = System.currentTimeMillis();
-        String answer = jdbc.queryForObject(RUN_TEAM_SQL, String.class, teamName, prompt, paramsJson);
+        String answer = runTeamWithRetry(prompt, paramsJson);
         long elapsed = System.currentTimeMillis() - t0;
         log.info("RUN_TEAM completed in {}ms (conversation={}, team={})", elapsed, conversationId, teamName);
 
@@ -86,6 +86,21 @@ public class AgentsService {
         }
 
         return new AgentRunResponse(prompt, answer, conversationId, elapsed, trace);
+    }
+
+    private String runTeamWithRetry(String prompt, String paramsJson) {
+        try {
+            return jdbc.queryForObject(RUN_TEAM_SQL, String.class, teamName, prompt, paramsJson);
+        } catch (RuntimeException e) {
+            // ORA-28511: lost RPC connection to heterogeneous remote agent
+            // is a transient gateway crash on first contact with a Postgres
+            // / Mongo DB_LINK. RUN_TEAM pre-validates all referenced links.
+            // One retry consistently succeeds because the gateway respawns.
+            String msg = e.getMessage() == null ? "" : e.getMessage();
+            if (!msg.contains("ORA-28511")) throw e;
+            log.warn("RUN_TEAM hit ORA-28511 (heterogeneous gateway). Retrying once.");
+            return jdbc.queryForObject(RUN_TEAM_SQL, String.class, teamName, prompt, paramsJson);
+        }
     }
 
     private AgentTrace buildTrace(String execId) {

@@ -333,11 +333,17 @@ databaseChangeLog:
                   }'
                 );
 
+                -- DBMS_CLOUD_AI_AGENT.CREATE_TASK accepts a single prior
+                -- task name in "input"; in sequential team flow this synth
+                -- task automatically receives the immediate predecessor's
+                -- output (GATHER_CARE_CONTEXT) and the LLM can reach back
+                -- to ASSESS_COMPLIANCE through the team's conversation
+                -- history. Specifying multiple inputs (string or JSON
+                -- array) yields ORA-20051 "Invalid value for task object".
                 DBMS_CLOUD_AI_AGENT.CREATE_TASK(
                   task_name  => 'SYNTHESIZE_CASE',
                   attributes => '{
-                    "instruction": "Compose the final case file for the user request: {query}. Combine the compliance assessment and the customer-care context provided in your input. Output sections: Findings, Risk rating, Recommended next actions.",
-                    "input": ["ASSESS_COMPLIANCE", "GATHER_CARE_CONTEXT"]
+                    "instruction": "Compose the final case file for the user request: {query}. Use both the compliance assessment and the customer-care context available in the team conversation history. Output sections: Findings, Risk rating, Recommended next actions."
                   }'
                 );
               END;
