@@ -12,13 +12,13 @@ const LABELS: Record<ComponentName, string> = {
 @Component({
   selector: 'app-status-pill',
   template: `
-    <div class="pill" [class]="overall()">
-      <span class="dot"></span>
+    <div class="pill">
+      <span [class]="'dot ' + overall()"></span>
       <span class="label">Status</span>
       <div class="popup">
         @for (row of rows(); track row.key) {
           <div class="row">
-            <span class="dot" [class]="row.state"></span>
+            <span [class]="'dot ' + row.state"></span>
             <span class="name">{{ row.label }}</span>
             <span class="state">{{ row.state }}</span>
           </div>
@@ -41,13 +41,14 @@ const LABELS: Record<ComponentName, string> = {
       user-select: none;
     }
     .dot {
+      display: inline-block;
       width: 0.55rem; height: 0.55rem;
       border-radius: 50%;
       background: #9B9590;
     }
-    .ready .dot, .dot.ready { background: #1A7F3C; }
-    .bootstrapping .dot, .dot.bootstrapping { background: #E0A030; }
-    .error .dot, .dot.error { background: #C74634; }
+    .dot.ready { background: #1A7F3C; }
+    .dot.bootstrapping { background: #E0A030; }
+    .dot.error { background: #C74634; }
     .popup {
       position: absolute;
       top: calc(100% + 0.4rem);
