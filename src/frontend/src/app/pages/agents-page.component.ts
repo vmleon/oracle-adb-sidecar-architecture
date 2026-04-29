@@ -26,7 +26,7 @@ const CHIPS: string[] = [
   standalone: true,
   imports: [CommonModule, FormsModule],
   template: `
-    <h2>Select AI Agents</h2>
+    <h2>Banking Assistant <span class="suite">(Select AI)</span></h2>
     <p class="subtitle">
       A four-agent banking investigation team running entirely inside ADB. One
       prompt fans out to a Transaction Analyst, a Compliance Officer (SQL +
@@ -100,6 +100,11 @@ const CHIPS: string[] = [
   `,
   styles: [
     `
+      .suite {
+        font-weight: normal;
+        color: #6B6560;
+        font-size: 0.7em;
+      }
       .subtitle {
         color: #555;
         margin-bottom: 16px;
