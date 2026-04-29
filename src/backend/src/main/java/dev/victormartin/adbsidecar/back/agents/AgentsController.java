@@ -21,8 +21,12 @@ public class AgentsController {
 
     private static final Logger log = LoggerFactory.getLogger(AgentsController.class);
     private static final int MAX_PROMPT_LEN = 1000;
+    // Allow letters, numbers, whitespace, plus common ASCII punctuation and
+    // the typographic variants macOS/iOS auto-substitute (em/en dash, smart
+    // quotes, ellipsis). Without these, the seeded demo chips fail validation
+    // on a Mac because "—" (U+2014) is rejected.
     private static final Pattern ALLOWED_PROMPT =
-            Pattern.compile("^[\\p{L}\\p{N}\\s,\\.\\-()\\?!':;\"/&#%$]+$");
+            Pattern.compile("^[\\p{L}\\p{N}\\s,\\.\\-()\\?!':;\"/&#%$—–’‘”“…]+$");
     private static final Pattern UUID_LIKE = Pattern.compile("^[0-9a-fA-F-]{36}$");
 
     private final AgentsService service;
