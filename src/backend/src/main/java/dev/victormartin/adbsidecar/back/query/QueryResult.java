@@ -17,6 +17,17 @@ public record QueryResult(
 
     public static QueryResult failure(Exception e, double elapsedMs) {
         return new QueryResult(List.of(), 0, elapsedMs, false,
-                e.getClass().getSimpleName(), e.getMessage());
+                e.getClass().getSimpleName(), rootMessage(e));
+    }
+
+    private static String rootMessage(Throwable e) {
+        Throwable root = e;
+        while (root.getCause() != null && root.getCause() != root) {
+            root = root.getCause();
+        }
+        String top = e.getMessage();
+        String bottom = root.getMessage();
+        if (bottom == null || bottom.equals(top)) return top;
+        return top + " — caused by: " + bottom;
     }
 }
