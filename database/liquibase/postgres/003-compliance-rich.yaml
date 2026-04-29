@@ -28,7 +28,7 @@ databaseChangeLog:
             columns:
               - column: { name: code, type: VARCHAR(20) }
               - column: { name: name, type: VARCHAR(120) }
-              - column: { name: threshold_amount, type: NUMERIC(12, 2) }
+              - column: { name: threshold_amount, type: "NUMERIC(12,2)" }
               - column: { name: threshold_count, type: INTEGER }
               - column: { name: threshold_window, type: VARCHAR(16) }
               - column: { name: severity, type: VARCHAR(8) }
@@ -70,6 +70,13 @@ databaseChangeLog:
                 (7, 'ctr-reporting',     'Currency Transaction Reporting — $10K cash threshold filing requirement',                               'P-CTR-01',  'AML',       DATE '2024-01-01'),
                 (8, 'sar-procedures',    'Suspicious Activity Reporting — narrative requirements and 30-day filing window',                       'P-SAR-01',  'AML',       DATE '2024-01-01')
               ;
+
+  - changeSet:
+      id: postgres-003-widen-rules-severity
+      author: adbsidecar
+      changes:
+        - sql:
+            sql: ALTER TABLE rules ALTER COLUMN severity TYPE VARCHAR(16)
 
   - changeSet:
       id: postgres-003-backfill-rules

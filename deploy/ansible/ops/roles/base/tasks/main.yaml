@@ -1,5 +1,5 @@
 ---
-- name: Install jump-host tools + JDK 23 + SQLcl + postgresql client + ncat
+- name: Install jump-host tools + JDK 23 + SQLcl + postgresql client + ncat + OCI CLI
   ansible.builtin.dnf:
     name:
       - vim
@@ -10,6 +10,7 @@
       - unzip
       - nmap-ncat
       - oci-utils
+      - python3-oci-cli
       - jdk-23
       - sqlcl
       - postgresql

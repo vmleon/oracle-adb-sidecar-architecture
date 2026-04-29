@@ -337,7 +337,7 @@ databaseChangeLog:
                   task_name  => 'SYNTHESIZE_CASE',
                   attributes => '{
                     "instruction": "Compose the final case file for the user request: {query}. Combine the compliance assessment and the customer-care context provided in your input. Output sections: Findings, Risk rating, Recommended next actions.",
-                    "input": "ASSESS_COMPLIANCE,GATHER_CARE_CONTEXT"
+                    "input": ["ASSESS_COMPLIANCE", "GATHER_CARE_CONTEXT"]
                   }'
                 );
               END;
