@@ -214,11 +214,39 @@ def setup():
     mongo_db_password = _generate_password()
 
     console.print("\nOCI GenAI settings (used for Select AI Agents):")
-    genai_region = click.prompt("GenAI region", default="us-chicago-1")
-    genai_compartment_id = click.prompt(
-        "GenAI compartment OCID (leave blank to use the same compartment)",
-        default=compartment_ocid,
-    )
+
+    if regions:
+        region_choices = [
+            f"{r['name']} (home)" if r["is_home"] else r["name"] for r in regions
+        ]
+        default_region_choice = next(
+            (c for c in region_choices if c.replace(" (home)", "") == region),
+            region_choices[0],
+        )
+        selected = inquirer.select(
+            message="GenAI region:",
+            choices=region_choices,
+            default=default_region_choice,
+        ).execute()
+        genai_region = selected.replace(" (home)", "")
+    else:
+        genai_region = click.prompt("GenAI region", default=region)
+
+    if compartments:
+        default_comp_name = next(
+            (c["name"] for c in compartments if c["id"] == compartment_ocid),
+            compartments[0]["name"],
+        )
+        selected = inquirer.fuzzy(
+            message="GenAI compartment (type to search):",
+            choices=[c["name"] for c in compartments],
+            default=default_comp_name,
+        ).execute()
+        genai_compartment_id = comp_map[selected]
+    else:
+        genai_compartment_id = click.prompt(
+            "GenAI compartment OCID", default=compartment_ocid
+        )
 
     console.print(
         Panel(
