@@ -1,14 +1,18 @@
 import { Component } from '@angular/core';
-import { RouterOutlet } from '@angular/router';
+import { RouterLink, RouterOutlet } from '@angular/router';
 import { NavComponent } from './nav/nav.component';
 import { StatusPillComponent } from './status-pill/status-pill.component';
 
 @Component({
   selector: 'app-root',
-  imports: [RouterOutlet, NavComponent, StatusPillComponent],
+  imports: [RouterLink, RouterOutlet, NavComponent, StatusPillComponent],
   template: `
     <header>
-      <h1><span class="oracle-red">Oracle</span> ADB Sidecar Architecture</h1>
+      <h1>
+        <a routerLink="/app">
+          <span class="oracle-red">Oracle</span> ADB Sidecar Architecture
+        </a>
+      </h1>
       <app-status-pill />
     </header>
     <main>
@@ -31,6 +35,8 @@ import { StatusPillComponent } from './status-pill/status-pill.component';
       gap: 1rem;
     }
     h1 { margin: 0; font-size: 1.1rem; color: #F1EFED; }
+    h1 a { color: inherit; text-decoration: none; }
+    h1 a:hover { text-decoration: underline; }
     h1 .oracle-red { color: #C74634; }
     main {
       flex: 1;
