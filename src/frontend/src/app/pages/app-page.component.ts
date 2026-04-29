@@ -1,6 +1,7 @@
-import { Component, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { CardComponent, CardState } from '../card/card.component';
 import { QueryService, Table } from '../query.service';
+import { ReadinessService } from '../readiness.service';
 import { randomUuid } from '../uuid';
 
 interface Entry {
@@ -20,8 +21,8 @@ interface Entry {
       ADB 26ai is not involved in this path.
     </p>
 
-    <button (click)="loadAll()" [disabled]="busy()">
-      {{ busy() ? 'Loading…' : 'Load banking data' }}
+    <button (click)="loadAll()" [disabled]="busy() || !ready()">
+      {{ buttonLabel() }}
     </button>
 
     <div class="grid">
@@ -42,9 +43,14 @@ interface Entry {
   `,
 })
 export class AppPageComponent {
+  private readiness = inject(ReadinessService);
   constructor(private query: QueryService) {}
 
   busy = signal(false);
+  ready = this.readiness.appReady;
+  buttonLabel = computed(() =>
+    this.busy() ? 'Loading…' : this.ready() ? 'Load banking data' : 'Waiting for databases…'
+  );
 
   entries: Entry[] = [
     { label: 'Oracle Free 26ai — accounts',         table: 'accounts',        state: signal<CardState>({ kind: 'idle' }) },

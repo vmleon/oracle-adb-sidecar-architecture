@@ -1,0 +1,90 @@
+import { Component, computed, inject } from '@angular/core';
+import { ComponentName, ComponentState, ReadinessService } from '../readiness.service';
+
+const LABELS: Record<ComponentName, string> = {
+  adb: 'ADB sidecar',
+  oracleFree: 'Oracle Free',
+  postgres: 'PostgreSQL',
+  mongo: 'MongoDB',
+  agentsTeam: 'Agents team',
+};
+
+@Component({
+  selector: 'app-status-pill',
+  template: `
+    <div class="pill" [class]="overall()">
+      <span class="dot"></span>
+      <span class="label">Status</span>
+      <div class="popup">
+        @for (row of rows(); track row.key) {
+          <div class="row">
+            <span class="dot" [class]="row.state"></span>
+            <span class="name">{{ row.label }}</span>
+            <span class="state">{{ row.state }}</span>
+          </div>
+        }
+      </div>
+    </div>
+  `,
+  styles: `
+    .pill {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.25rem 0.7rem;
+      border-radius: 999px;
+      background: #3C3835;
+      color: #F1EFED;
+      font-size: 0.8rem;
+      cursor: default;
+      user-select: none;
+    }
+    .dot {
+      width: 0.55rem; height: 0.55rem;
+      border-radius: 50%;
+      background: #9B9590;
+    }
+    .ready .dot, .dot.ready { background: #1A7F3C; }
+    .bootstrapping .dot, .dot.bootstrapping { background: #E0A030; }
+    .error .dot, .dot.error { background: #C74634; }
+    .popup {
+      position: absolute;
+      top: calc(100% + 0.4rem);
+      right: 0;
+      min-width: 16rem;
+      background: #FFFFFF;
+      color: #2C2723;
+      border: 1px solid #E5E0DA;
+      border-radius: 6px;
+      padding: 0.5rem;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+      display: none;
+      z-index: 10;
+    }
+    .pill:hover .popup, .pill:focus-within .popup { display: block; }
+    .row {
+      display: grid;
+      grid-template-columns: 0.55rem 1fr auto;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.2rem 0.25rem;
+    }
+    .name { font-size: 0.85rem; }
+    .state { font-size: 0.75rem; color: #6B6560; text-transform: capitalize; }
+  `,
+})
+export class StatusPillComponent {
+  private readiness = inject(ReadinessService);
+
+  overall = this.readiness.overall;
+
+  rows = computed(() => {
+    const c = this.readiness.components();
+    return (Object.keys(LABELS) as ComponentName[]).map((key) => ({
+      key,
+      label: LABELS[key],
+      state: c[key] as ComponentState,
+    }));
+  });
+}

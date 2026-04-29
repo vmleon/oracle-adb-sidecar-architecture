@@ -1,6 +1,7 @@
-import { Component, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { CardComponent, CardState } from '../card/card.component';
 import { QueryService, Table } from '../query.service';
+import { ReadinessService } from '../readiness.service';
 import { randomUuid } from '../uuid';
 
 interface Entry {
@@ -21,8 +22,8 @@ interface Entry {
       Your production databases are unchanged; 26ai capabilities layer on top.
     </p>
 
-    <button (click)="loadAll()" [disabled]="busy()">
-      {{ busy() ? 'Loading…' : 'Load banking data via ADB sidecar' }}
+    <button (click)="loadAll()" [disabled]="busy() || !ready()">
+      {{ buttonLabel() }}
     </button>
 
     <div class="grid">
@@ -43,9 +44,14 @@ interface Entry {
   `,
 })
 export class SidecarPageComponent {
+  private readiness = inject(ReadinessService);
   constructor(private query: QueryService) {}
 
   busy = signal(false);
+  ready = this.readiness.sidecarReady;
+  buttonLabel = computed(() =>
+    this.busy() ? 'Loading…' : this.ready() ? 'Load banking data via ADB sidecar' : 'Waiting for ADB sidecar…'
+  );
 
   entries: Entry[] = [
     { label: 'Oracle Free 26ai — accounts',         table: 'accounts',        state: signal<CardState>({ kind: 'idle' }) },

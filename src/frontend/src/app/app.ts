@@ -1,13 +1,15 @@
 import { Component } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
 import { NavComponent } from './nav/nav.component';
+import { StatusPillComponent } from './status-pill/status-pill.component';
 
 @Component({
   selector: 'app-root',
-  imports: [RouterOutlet, NavComponent],
+  imports: [RouterOutlet, NavComponent, StatusPillComponent],
   template: `
     <header>
       <h1><span class="oracle-red">Oracle</span> ADB Sidecar Architecture</h1>
+      <app-status-pill />
     </header>
     <main>
       <app-nav />
@@ -23,6 +25,10 @@ import { NavComponent } from './nav/nav.component';
       padding: 0.75rem 1.5rem;
       background: #2C2723;
       border-bottom: 1px solid #3C3835;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
     }
     h1 { margin: 0; font-size: 1.1rem; color: #F1EFED; }
     h1 .oracle-red { color: #C74634; }

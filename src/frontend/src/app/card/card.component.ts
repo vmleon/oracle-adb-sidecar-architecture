@@ -1,5 +1,7 @@
-import { Component, computed, input } from '@angular/core';
+import { Component, computed, input, signal } from '@angular/core';
 import { QueryResponse, Row } from '../query.service';
+
+const COLLAPSED_LIMIT = 7;
 
 export type CardState =
   | { kind: 'idle' }
@@ -15,7 +17,10 @@ export type CardState =
       <header class="card-head">
         <h4>{{ label() }}</h4>
         @if (state().kind === 'success') {
-          <span class="badge">{{ ms() }} ms</span>
+          <div class="badges">
+            <span class="badge">{{ totalRows() }} rows</span>
+            <span class="badge">{{ ms() }} ms</span>
+          </div>
         }
       </header>
 
@@ -33,25 +38,36 @@ export type CardState =
           <p class="error">{{ errorMessage() }}</p>
         }
         @case ('success') {
-          @if (rows().length) {
-            <table>
-              <thead>
-                <tr>
-                  @for (h of headers(); track h) {
-                    <th>{{ h }}</th>
-                  }
-                </tr>
-              </thead>
-              <tbody>
-                @for (r of rows(); track $index) {
+          @if (totalRows()) {
+            <div class="table-wrap" [class.collapsed]="!expanded() && hasMore()">
+              <table>
+                <thead>
                   <tr>
                     @for (h of headers(); track h) {
-                      <td [class]="cellClass(r, h)">{{ cell(r, h) }}</td>
+                      <th>{{ h }}</th>
                     }
                   </tr>
+                </thead>
+                <tbody>
+                  @for (r of visibleRows(); track $index) {
+                    <tr>
+                      @for (h of headers(); track h) {
+                        <td [class]="cellClass(r, h)">{{ cell(r, h) }}</td>
+                      }
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            @if (hasMore()) {
+              <button type="button" class="more" (click)="toggle()">
+                @if (expanded()) {
+                  Show fewer
+                } @else {
+                  Show all {{ totalRows() }} rows
                 }
-              </tbody>
-            </table>
+              </button>
+            }
           } @else {
             <p class="muted">no rows</p>
           }
@@ -68,7 +84,7 @@ export type CardState =
       overflow-x: auto;
       box-shadow: 0 1px 2px rgba(44, 39, 35, 0.04);
     }
-    .card-head { display: flex; justify-content: space-between; align-items: baseline; }
+    .card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; }
     .card-head h4 {
       margin: 0 0 0.5rem;
       color: #C74634;
@@ -76,6 +92,7 @@ export type CardState =
       text-transform: uppercase;
       letter-spacing: 0.05em;
     }
+    .badges { display: flex; gap: 0.35rem; flex-wrap: wrap; justify-content: flex-end; }
     .badge {
       font-size: 0.75rem;
       color: #6B6560;
@@ -84,6 +101,27 @@ export type CardState =
       border-radius: 999px;
       font-variant-numeric: tabular-nums;
     }
+    .table-wrap { position: relative; }
+    .table-wrap.collapsed::after {
+      content: '';
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 2.25rem;
+      background: linear-gradient(to bottom, rgba(255,255,255,0), #FFFFFF);
+      pointer-events: none;
+    }
+    .more {
+      margin-top: 0.5rem;
+      background: none;
+      border: none;
+      color: #C74634;
+      font-size: 0.8rem;
+      cursor: pointer;
+      padding: 0.15rem 0;
+    }
+    .more:hover { text-decoration: underline; }
     table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
     th, td {
       text-align: left;
@@ -101,10 +139,25 @@ export class CardComponent {
   label = input.required<string>();
   state = input.required<CardState>();
 
+  expanded = signal(false);
+
   rows = computed<Row[]>(() => {
     const s = this.state();
     return s.kind === 'success' ? s.data.rows : [];
   });
+
+  totalRows = computed(() => this.rows().length);
+
+  hasMore = computed(() => this.totalRows() > COLLAPSED_LIMIT);
+
+  visibleRows = computed<Row[]>(() => {
+    const all = this.rows();
+    return this.expanded() ? all : all.slice(0, COLLAPSED_LIMIT);
+  });
+
+  toggle(): void {
+    this.expanded.update((v) => !v);
+  }
 
   ms = computed(() => {
     const s = this.state();

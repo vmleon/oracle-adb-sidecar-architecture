@@ -1,7 +1,8 @@
-import { Component, signal } from "@angular/core";
+import { Component, computed, inject, signal } from "@angular/core";
 import { CommonModule } from "@angular/common";
 import { FormsModule } from "@angular/forms";
 import { AgentsService, AgentRunResponse } from "../agents.service";
+import { ReadinessService } from "../readiness.service";
 
 interface ChatTurn {
   role: "user" | "assistant" | "error";
@@ -88,8 +89,8 @@ const CHIPS: string[] = [
         rows="3"
         placeholder="Ask the team..."
       ></textarea>
-      <button (click)="send()" [disabled]="loading() || !promptModel.trim()">
-        Send →
+      <button (click)="send()" [disabled]="loading() || !ready() || !promptModel.trim()">
+        {{ ready() ? 'Send →' : 'Waiting for agents…' }}
       </button>
       <button (click)="newConversation()" class="secondary">
         New conversation
@@ -109,14 +110,18 @@ const CHIPS: string[] = [
         margin-bottom: 16px;
       }
       .chips button {
-        padding: 6px 12px;
+        padding: 6px 14px;
         border-radius: 16px;
-        border: 1px solid #ccc;
-        background: #f7f7f9;
+        border: 1px solid #C74634;
+        background: #F5F2EE;
+        color: #C74634;
+        font-size: 0.85rem;
         cursor: pointer;
+        transition: background 0.15s, color 0.15s;
       }
       .chips button:hover {
-        background: #eef;
+        background: #C74634;
+        color: #FFFFFF;
       }
       .conversation {
         display: flex;
@@ -197,11 +202,13 @@ const CHIPS: string[] = [
   ],
 })
 export class AgentsPageComponent {
+  private readiness = inject(ReadinessService);
   chips = CHIPS;
   promptModel = "";
   conversationId = signal<string | undefined>(undefined);
   turns = signal<ChatTurn[]>([]);
   loading = signal(false);
+  ready = this.readiness.agentsReady;
 
   constructor(private agents: AgentsService) {}
 
