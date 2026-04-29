@@ -1,5 +1,7 @@
 # Oracle ADB 26ai Sidecar Architecture
 
+![Sidecar architecture](images/sidecar.png)
+
 **Keep your current app. Keep your current databases and their lifecycle. Attach Autonomous Database 26ai as a sidecar, layer AI features on top, and consolidate datasources on your own schedule.**
 
 This repository is a working live demo of the **Oracle Select AI "AI Proxy Database" pattern** (also called _Select AI sidecar_), as described in the Oracle Database 26ai Select AI User's Guide ([Use Autonomous AI Database as an AI Proxy for Select AI](https://docs.oracle.com/en/database/oracle/oracle-database/26/selai/select-ai-sidecar-databases.html)). An ADB 26ai instance acts as the AI Proxy: production data stays in Oracle Free 26ai and PostgreSQL 18 containers, ADB reaches them via `DBMS_CLOUD_ADMIN.CREATE_DATABASE_LINK` and exposes `V_BNK_*` views, and Select AI runs NL2SQL on top. The demo extends the documented NL2SQL pattern with a vector-RAG index and a 4-agent `DBMS_CLOUD_AI_AGENT.RUN_TEAM` investigation team — Select AI capabilities that compose with the AI Proxy pattern but are not covered on that specific docs page.
