@@ -66,7 +66,9 @@ resource "oci_load_balancer_listener" "lb-listener" {
   routing_policy_name      = oci_load_balancer_load_balancer_routing_policy.routing_policy.name
 
   connection_configuration {
-    idle_timeout_in_seconds = "30"
+    # 5 minutes — Select AI Agents team runs can legitimately take 60-120s
+    # (multi-task fan-out + RAG + GenAI calls). Default 30s caused 504s.
+    idle_timeout_in_seconds = "300"
   }
 }
 
