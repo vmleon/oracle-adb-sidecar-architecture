@@ -6,10 +6,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 
 @Service
 public class AgentsService {
@@ -55,13 +59,24 @@ public class AgentsService {
             ORDER BY TASK_ORDER, START_DATE
             """;
 
+    private static final String TEAM_EXISTS_SQL =
+            "SELECT COUNT(*) FROM USER_AI_AGENT_TEAMS WHERE AGENT_TEAM_NAME = ? AND STATUS = 'ENABLED'";
+
     private final JdbcTemplate jdbc;
     private final String teamName;
+    private final boolean warmUpEnabled;
+    private final Executor warmUpExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "agents-warmup");
+        t.setDaemon(true);
+        return t;
+    });
 
     public AgentsService(@Qualifier("adbJdbc") JdbcTemplate jdbc,
-                         @Value("${selectai.agents.team:BANKING_INVESTIGATION_TEAM}") String teamName) {
+                         @Value("${selectai.agents.team:BANKING_INVESTIGATION_TEAM}") String teamName,
+                         @Value("${selectai.agents.warmup.enabled:true}") boolean warmUpEnabled) {
         this.jdbc = jdbc;
         this.teamName = teamName;
+        this.warmUpEnabled = warmUpEnabled;
     }
 
     public AgentRunResponse runTeam(String prompt, String conversationIdOrNull) {
@@ -86,6 +101,47 @@ public class AgentsService {
         }
 
         return new AgentRunResponse(prompt, answer, conversationId, elapsed, trace);
+    }
+
+    // Fire one throwaway RUN_TEAM call after the backend is up so the GenAI
+    // workers and heterogeneous gateways are warm before the first real user
+    // request. Polls in a background thread until the team is ENABLED — the
+    // backend can boot before Liquibase has finished creating the team — then
+    // runs once. Failures are logged and dropped: if warm-up never completes,
+    // user requests still work, they just pay the cold-start cost themselves.
+    @EventListener(ApplicationReadyEvent.class)
+    public void scheduleWarmUp() {
+        if (!warmUpEnabled) {
+            log.info("Agents warm-up disabled (selectai.agents.warmup.enabled=false)");
+            return;
+        }
+        warmUpExecutor.execute(this::warmUpLoop);
+    }
+
+    private void warmUpLoop() {
+        int maxAttempts = 60;       // ~10 minutes total when paired with the 10s sleep
+        long sleepMs = 10_000L;
+        for (int i = 0; i < maxAttempts; i++) {
+            try {
+                Integer count = jdbc.queryForObject(TEAM_EXISTS_SQL, Integer.class, teamName);
+                if (count != null && count > 0) {
+                    log.info("Warming up agents team {}...", teamName);
+                    long t0 = System.currentTimeMillis();
+                    String params = "{\"conversation_id\":\"_warmup_" + UUID.randomUUID() + "\"}";
+                    runTeamWithRetry("warm-up ping; reply with OK.", params);
+                    log.info("Agents warm-up complete in {}ms", System.currentTimeMillis() - t0);
+                    return;
+                }
+            } catch (Exception e) {
+                log.debug("Warm-up probe attempt {} failed: {}", i + 1, e.getMessage());
+            }
+            try { Thread.sleep(sleepMs); } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
+        log.warn("Agents warm-up gave up after {} attempts; team {} never reported ENABLED",
+                maxAttempts, teamName);
     }
 
     // First-contact ORA-* codes that surface from RUN_TEAM during cold-start

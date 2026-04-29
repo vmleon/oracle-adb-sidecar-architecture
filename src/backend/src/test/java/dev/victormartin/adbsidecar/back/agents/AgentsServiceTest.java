@@ -24,7 +24,7 @@ class AgentsServiceTest {
     @BeforeEach
     void setUp() {
         jdbc = mock(JdbcTemplate.class);
-        service = new AgentsService(jdbc, "BANKING_INVESTIGATION_TEAM");
+        service = new AgentsService(jdbc, "BANKING_INVESTIGATION_TEAM", false);
     }
 
     @Test
