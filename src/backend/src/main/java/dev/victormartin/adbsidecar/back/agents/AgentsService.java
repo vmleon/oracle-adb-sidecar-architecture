@@ -88,17 +88,27 @@ public class AgentsService {
         return new AgentRunResponse(prompt, answer, conversationId, elapsed, trace);
     }
 
+    // First-contact ORA-* codes that surface from RUN_TEAM during cold-start
+    // of the underlying GenAI worker / heterogeneous gateway and consistently
+    // succeed on a second attempt. Add to this list when new transients are
+    // observed in the field; do not catch arbitrary errors — a real failure
+    // (ORA-20051 task validation, ORA-00942 missing view) must not be retried.
+    private static final String[] RETRYABLE_ORA = {
+            "ORA-28511", // lost RPC connection to heterogeneous remote agent
+            "ORA-01010", // invalid OCI operation (GenAI worker first-call flake)
+    };
+
     private String runTeamWithRetry(String prompt, String paramsJson) {
         try {
             return jdbc.queryForObject(RUN_TEAM_SQL, String.class, teamName, prompt, paramsJson);
         } catch (RuntimeException e) {
-            // ORA-28511: lost RPC connection to heterogeneous remote agent
-            // is a transient gateway crash on first contact with a Postgres
-            // / Mongo DB_LINK. RUN_TEAM pre-validates all referenced links.
-            // One retry consistently succeeds because the gateway respawns.
             String msg = e.getMessage() == null ? "" : e.getMessage();
-            if (!msg.contains("ORA-28511")) throw e;
-            log.warn("RUN_TEAM hit ORA-28511 (heterogeneous gateway). Retrying once.");
+            String hit = null;
+            for (String code : RETRYABLE_ORA) {
+                if (msg.contains(code)) { hit = code; break; }
+            }
+            if (hit == null) throw e;
+            log.warn("RUN_TEAM hit {} on first attempt. Retrying once.", hit);
             return jdbc.queryForObject(RUN_TEAM_SQL, String.class, teamName, prompt, paramsJson);
         }
     }
