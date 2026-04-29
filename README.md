@@ -229,9 +229,6 @@ Prints the LB public IP, ops SSH command, and the demo endpoint URL.
 
 ```bash
 cd ../../..
-```
-
-```bash
 python manage.py info
 ```
 
@@ -253,7 +250,7 @@ After `terraform apply`, print the endpoints and SSH command:
 python manage.py info
 ```
 
-Open the load balancer IP in a browser and click through `/app`, `/sidecar`, and `/measurements`. The backend health check, for quick sanity:
+Open the load balancer IP in a browser and click through `/app`, `/sidecar`, `/agents`, and `/measurements`. The backend health check, for quick sanity:
 
 ```bash
 curl http://<lb_public_ip>/api/v1/health
@@ -287,5 +284,6 @@ python manage.py clean
 ## More info
 
 - [docs/FEDERATED_QUERIES.md](docs/FEDERATED_QUERIES.md) — the deep dive on how ADB reaches Oracle Free / Postgres / Mongo through `DBMS_CLOUD_ADMIN.CREATE_DATABASE_LINK`, with the two hard requirements (DNS-resolvable hostname, Mongo data outside `admin`) and the `ORA-17008` mid-run recovery path.
+- [docs/AGENTS_DEMO.md](docs/AGENTS_DEMO.md) — manual runbook for the five Select AI Agents demo prompts, with the expected agent fan-out and what to point at on screen for each one.
 - [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) — day-two playbook for each tier (ops, databases, back, front) plus how to poke at each database from the ops bastion.
 - [NOTES.md](NOTES.md) — what's intentionally deferred and the iteration roadmap.
