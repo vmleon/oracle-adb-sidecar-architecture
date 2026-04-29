@@ -343,7 +343,8 @@
         cmd: liquibase --defaults-file=liquibase.properties update
         chdir: "{{ liquibase_adb_dir }}"
       register: adb_liquibase_result
-      changed_when: "'Update has been successful' in adb_liquibase_result.stdout"
+      # Liquibase 4.29 emits the success line on stderr, not stdout.
+      changed_when: "'Update has been successful' in (adb_liquibase_result.stdout ~ adb_liquibase_result.stderr)"
   rescue:
     - name: Release stale Liquibase lock (previous ORA-17008 left it held)
       ansible.builtin.command:
@@ -354,7 +355,8 @@
         cmd: liquibase --defaults-file=liquibase.properties update
         chdir: "{{ liquibase_adb_dir }}"
       register: adb_liquibase_result
-      changed_when: "'Update has been successful' in adb_liquibase_result.stdout"
+      # Liquibase 4.29 emits the success line on stderr, not stdout.
+      changed_when: "'Update has been successful' in (adb_liquibase_result.stdout ~ adb_liquibase_result.stderr)"
 
 - name: Capture Liquibase + mongosh output to /home/opc/ops/liquibase.log
   ansible.builtin.copy:
