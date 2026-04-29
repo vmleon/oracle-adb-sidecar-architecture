@@ -49,7 +49,7 @@ public class ReadinessService {
         components.put("mongo",      probe("mongo",      () -> { mongo.getDb().runCommand(new Document("ping", 1)); return true; }));
         components.put("agentsTeam", probe("agentsTeam", () -> {
             Integer n = adbJdbc.queryForObject(
-                    "SELECT COUNT(*) FROM USER_AI_AGENT_TEAMS WHERE TEAM_NAME = ?",
+                    "SELECT COUNT(*) FROM USER_AI_AGENT_TEAMS WHERE AGENT_TEAM_NAME = ? AND STATUS = 'ENABLED'",
                     Integer.class, teamName);
             return n != null && n > 0;
         }));
