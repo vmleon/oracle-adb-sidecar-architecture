@@ -9,39 +9,15 @@ resource "oci_objectstorage_bucket" "banking_rag_docs" {
   versioning     = "Disabled"
 }
 
-# OCI buckets refuse to delete if non-empty and the provider has no
-# force_destroy. The Ansible role uploads the policy markdown docs into
-# this bucket, so terraform destroy fails with 409-BucketNotEmpty unless
-# we sweep it first. This null_resource depends on the bucket, so it is
-# destroyed *before* the bucket and its destroy-time local-exec empties
-# it. Requires `oci` CLI on the machine running terraform — set
-# OCI_CLI_PATH in env if `oci` is not on PATH for terraform's shell.
-resource "null_resource" "empty_banking_rag_docs_on_destroy" {
-  triggers = {
-    bucket_name = oci_objectstorage_bucket.banking_rag_docs.name
-    namespace   = oci_objectstorage_bucket.banking_rag_docs.namespace
-    profile     = var.config_file_profile
-  }
-
-  provisioner "local-exec" {
-    when        = destroy
-    interpreter = ["/bin/bash", "-c"]
-    # No `|| true`: we want a hard failure if oci is missing or the
-    # delete is rejected, otherwise the bucket destroy that follows
-    # will 409 anyway and the operator has to debug blind.
-    command = <<-EOT
-      set -euo pipefail
-      OCI_BIN="$${OCI_CLI_PATH:-oci}"
-      command -v "$$OCI_BIN" >/dev/null 2>&1 \
-        || { echo "ERROR: oci CLI not found in PATH; install oci-cli or set OCI_CLI_PATH" >&2; exit 1; }
-      echo "Sweeping bucket ${self.triggers.bucket_name} (namespace ${self.triggers.namespace}) before delete..."
-      "$$OCI_BIN" os object bulk-delete \
-        --profile '${self.triggers.profile}' \
-        --namespace-name '${self.triggers.namespace}' \
-        --bucket-name '${self.triggers.bucket_name}' \
-        --force
-    EOT
-  }
+# Upload each policy markdown as a Terraform-managed object. This puts the
+# objects in state, so `terraform destroy` removes them before the bucket
+# (no 409-BucketNotEmpty), and content changes trigger re-upload on apply.
+resource "oci_objectstorage_object" "banking_rag_docs" {
+  for_each  = fileset("${path.module}/../../../database/banking-policy-docs", "*.md")
+  bucket    = oci_objectstorage_bucket.banking_rag_docs.name
+  namespace = oci_objectstorage_bucket.banking_rag_docs.namespace
+  object    = each.value
+  source    = "${path.module}/../../../database/banking-policy-docs/${each.value}"
 }
 
 resource "oci_objectstorage_bucket" "artifacts_bucket" {
