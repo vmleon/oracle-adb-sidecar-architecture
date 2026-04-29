@@ -1,6 +1,7 @@
 import { Component, computed, inject, signal } from "@angular/core";
 import { CommonModule } from "@angular/common";
 import { FormsModule } from "@angular/forms";
+import { DomSanitizer, SafeHtml } from "@angular/platform-browser";
 import { AgentsService, AgentRunResponse } from "../agents.service";
 import { ReadinessService } from "../readiness.service";
 
@@ -36,7 +37,7 @@ const CHIPS: string[] = [
     </div>
     <div class="conversation">
       <div *ngFor="let turn of turns()" [class]="'bubble ' + turn.role">
-        <div class="text">{{ turn.text }}</div>
+        <div class="text" [innerHTML]="renderMarkdown(turn.text)"></div>
         <div
           *ngIf="turn.role === 'assistant' && turn.elapsedMillis"
           class="badge"
@@ -147,7 +148,19 @@ const CHIPS: string[] = [
         align-self: flex-start;
       }
       .text {
-        white-space: pre-wrap;
+        line-height: 1.45;
+      }
+      .text p { margin: 0 0 0.5em; }
+      .text p:last-child { margin-bottom: 0; }
+      .text strong { font-weight: 600; }
+      .text em { font-style: italic; }
+      .text ul { margin: 0.25em 0 0.5em 1.25em; padding: 0; }
+      .text li { margin: 0.15em 0; }
+      .text code {
+        background: #eef0f3;
+        padding: 0.05em 0.3em;
+        border-radius: 3px;
+        font-size: 0.9em;
       }
       .badge {
         display: inline-block;
@@ -203,6 +216,7 @@ const CHIPS: string[] = [
 })
 export class AgentsPageComponent {
   private readiness = inject(ReadinessService);
+  private sanitizer = inject(DomSanitizer);
   chips = CHIPS;
   promptModel = "";
   conversationId = signal<string | undefined>(undefined);
@@ -255,5 +269,30 @@ export class AgentsPageComponent {
 
   toolsFor(trace: AgentRunResponse["trace"], taskOrder: number) {
     return trace ? trace.tools.filter((t) => t.taskOrder === taskOrder) : [];
+  }
+
+  // Minimal Markdown subset that the agents actually emit: bold, italics,
+  // bullet lists, inline code, and paragraph breaks. HTML-escape first so
+  // an LLM cannot inject markup. Anything more elaborate (tables, fenced
+  // code blocks, headings) would justify pulling in a real renderer.
+  renderMarkdown(text: string): SafeHtml {
+    if (!text) return '';
+    let html = text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+    html = html.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+    html = html.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+    html = html.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>');
+    const paragraphs = html.split(/\n{2,}/).map((block) => {
+      const lines = block.split('\n');
+      const isList = lines.every((l) => /^\s*[-*]\s+/.test(l));
+      if (isList) {
+        const items = lines.map((l) => l.replace(/^\s*[-*]\s+/, ''));
+        return '<ul>' + items.map((i) => `<li>${i}</li>`).join('') + '</ul>';
+      }
+      return `<p>${block.replace(/\n/g, '<br>')}</p>`;
+    });
+    return this.sanitizer.bypassSecurityTrustHtml(paragraphs.join(''));
   }
 }
