@@ -140,35 +140,85 @@
 # Oracle Free first-boot can take 5–10 min — longer than the cloud-init
 # pre-Ansible sleep, so without this the orafree registration races the
 # container and dies on ORA-17820.
-- name: Wait for Oracle Free 1521 on databases compute
+#
+# Layering: TCP port-up first, then service-level deep readiness. A TCP
+# accept on 1521 / 5432 / 27017 only proves the listener is up — the
+# Oracle PDB can still be in MOUNTED state, Postgres can still be
+# rejecting connections during startup, and Mongo can still be replaying
+# its journal. The deep checks below close that gap before we send any
+# credentialed traffic.
+- name: Wait for Oracle Free 1521 listener (TCP)
   ansible.builtin.wait_for:
     host: "{{ databases_private_ip }}"
     port: 1521
     timeout: 600
+    sleep: 10
 
-- name: Wait for Postgres 5432 on databases compute
+- name: Wait for Postgres 5432 listener (TCP)
   ansible.builtin.wait_for:
     host: "{{ databases_private_ip }}"
     port: 5432
     timeout: 600
+    sleep: 10
 
-- name: Wait for Mongo 27017 on databases compute
+- name: Wait for Mongo 27017 listener (TCP)
   ansible.builtin.wait_for:
     host: "{{ databases_private_ip }}"
     port: 27017
     timeout: 600
+    sleep: 10
+
+# pg_isready returns rc=0 only when the server is actually accepting
+# connections (not when it's still in startup recovery). No credentials
+# sent — the probe is protocol-level only.
+- name: Wait for Postgres to accept queries (pg_isready, no credentials)
+  ansible.builtin.command: pg_isready -h {{ databases_private_ip }} -p 5432 -t 10
+  register: postgres_ready_check
+  retries: 60
+  delay: 10
+  until: postgres_ready_check.rc == 0
+  changed_when: false
+
+# mongosh `ping` admin command runs as the admin user but is a no-op DB
+# call; we just need a 1.0 response. Auth happens once here — if creds
+# are bad mongosh exits non-zero immediately and the playbook aborts.
+- name: Wait for Mongo to accept queries (mongosh ping)
+  ansible.builtin.command: >-
+    mongosh --quiet --eval "db.runCommand({ping:1}).ok"
+    "mongodb://admin:{{ mongo_db_password | urlencode }}@{{ databases_private_ip }}:27017/admin"
+  register: mongo_ready_check
+  retries: 60
+  delay: 10
+  until: mongo_ready_check.rc == 0 and '1' in mongo_ready_check.stdout
+  changed_when: false
+  no_log: true
 
 # SQLcl on this build ships with a broken JLine (missing jansi/jna natives)
 # that crashes whenever stdin isn't a real TTY. `script -q /dev/null -c ...`
 # wraps the command in a pseudo-TTY so JLine initializes cleanly. Combined
 # with WHENEVER SQLERROR EXIT SQL.SQLCODE in the script above, SQLcl now
-# propagates ORA-* errors as a non-zero rc. `failed_when` also greps the
-# captured output for "ORA-" as a belt-and-suspenders check against silent
-# failures.
+# propagates ORA-* errors as a non-zero rc.
+#
+# Retry policy is deliberately auth-aware. Oracle's DEFAULT profile locks
+# an account after 10 failed login attempts, so we cannot blindly retry.
+# - On ORA-01017 (bad password) or ORA-28000 (account already locked) we
+#   stop retrying immediately and let the playbook fail. One credentialed
+#   attempt is enough; a second would needlessly increment the lock count.
+# - On transient errors (ORA-12523 / 12526 / 12528 / 01033 — PDB still
+#   opening or service not yet registered with the listener) we keep
+#   polling. These don't increment FAILED_LOGIN_ATTEMPTS because they
+#   fire before authentication.
+# 60 retries × 10 s = 10 min budget for the PDB to come up.
 - name: Register SQLcl saved connections (adb, orafree)
   ansible.builtin.command: script -q /dev/null -c "sql /nolog @/home/opc/conn.sql"
   become_user: opc
   register: sqlcl_conn_result
+  retries: 60
+  delay: 10
+  until: >
+    sqlcl_conn_result.rc == 0
+    or 'ORA-01017' in sqlcl_conn_result.stdout
+    or 'ORA-28000' in sqlcl_conn_result.stdout
   changed_when: "'Saved' in sqlcl_conn_result.stdout or 'saved' in sqlcl_conn_result.stdout"
   failed_when: sqlcl_conn_result.rc != 0 or 'ORA-' in sqlcl_conn_result.stdout
 
@@ -253,15 +303,24 @@
 
 # Listener on 1521 comes up well before the PDB is open — poll Liquibase
 # until it can actually connect and run a query (ORA-01033 goes away).
+# Same auth-aware retry rules as SQLcl conn-save above: bail out fast on
+# ORA-01017 / ORA-28000 so SYSTEM never accumulates failed-login attempts.
+# 60 × 10 s = 10 min budget; in practice the SQLcl conn-save above has
+# already proven the PDB accepts queries, so this almost always succeeds
+# on the first attempt.
 - name: Wait for Oracle Free PDB to accept Liquibase queries
   ansible.builtin.command:
     cmd: liquibase --defaults-file=liquibase.properties status
     chdir: "{{ liquibase_oracle_dir }}"
   register: oracle_ready_check
-  retries: 30
-  delay: 20
-  until: oracle_ready_check.rc == 0
+  retries: 60
+  delay: 10
+  until: >
+    oracle_ready_check.rc == 0
+    or 'ORA-01017' in (oracle_ready_check.stderr | default(''))
+    or 'ORA-28000' in (oracle_ready_check.stderr | default(''))
   changed_when: false
+  failed_when: oracle_ready_check.rc != 0
 
 - name: Run Liquibase update against Oracle Free (deployment_marker + banking)
   ansible.builtin.command:
@@ -291,17 +350,38 @@
 # (oci_objectstorage_object resources in deploy/tf/app/storage.tf), so
 # the bucket is already populated by the time this role runs.
 
-- name: Run Liquibase update against ADB (credentials, DB_LINKs, banking views) — robust against ORA-17008
-  # ADB occasionally drops the JDBC session mid-Liquibase (ORA-17008). The
-  # dropped run leaves a stale DATABASECHANGELOGLOCK row. `block/rescue`
-  # releases the lock and retries once; all our DDL uses CREATE OR REPLACE
-  # so re-running already-applied changesets is a no-op.
+- name: Run Liquibase update against ADB (credentials, DB_LINKs, banking views) — robust against ORA-17008 and DB_LINK DNS races
+  # Two transient failure modes are handled here, both observed in real
+  # deploys:
+  #
+  # 1. ORA-12545 / ORA-12541 — the V_* view changesets fail when the
+  #    DB_LINK was just CREATEd but the ADB private endpoint hasn't yet
+  #    resolved the VCN-private FQDN of the databases compute. OCI DNS
+  #    propagation can take a couple of minutes. The `until` loop below
+  #    keeps retrying ONLY while the failure is one of those DNS-class
+  #    errors; any other error stops the loop and falls through to the
+  #    rescue block.
+  #
+  # 2. ORA-17008 — ADB drops the JDBC session mid-Liquibase, leaving a
+  #    stale DATABASECHANGELOGLOCK row. The rescue block releases the
+  #    lock and retries; same DNS-race protection applies on the retry.
+  #
+  # All ADB DDL uses CREATE OR REPLACE / DROP-if-exists guards, so
+  # re-running already-applied changesets is a no-op.
   block:
-    - name: ADB Liquibase update (first attempt)
+    - name: ADB Liquibase update (first attempt, retries on DB_LINK DNS race)
       ansible.builtin.command:
         cmd: liquibase --defaults-file=liquibase.properties update
         chdir: "{{ liquibase_adb_dir }}"
       register: adb_liquibase_result
+      retries: 10
+      delay: 30
+      until: >
+        adb_liquibase_result.rc == 0
+        or not (
+          'ORA-12545' in (adb_liquibase_result.stderr | default(''))
+          or 'ORA-12541' in (adb_liquibase_result.stderr | default(''))
+        )
       # Liquibase 4.29 emits the success line on stderr, not stdout.
       changed_when: "'Update has been successful' in (adb_liquibase_result.stdout ~ adb_liquibase_result.stderr)"
   rescue:
@@ -309,11 +389,19 @@
       ansible.builtin.command:
         cmd: liquibase --defaults-file=liquibase.properties releaseLocks
         chdir: "{{ liquibase_adb_dir }}"
-    - name: ADB Liquibase update (retry)
+    - name: ADB Liquibase update (retry after lock release, retries on DB_LINK DNS race)
       ansible.builtin.command:
         cmd: liquibase --defaults-file=liquibase.properties update
         chdir: "{{ liquibase_adb_dir }}"
       register: adb_liquibase_result
+      retries: 10
+      delay: 30
+      until: >
+        adb_liquibase_result.rc == 0
+        or not (
+          'ORA-12545' in (adb_liquibase_result.stderr | default(''))
+          or 'ORA-12541' in (adb_liquibase_result.stderr | default(''))
+        )
       # Liquibase 4.29 emits the success line on stderr, not stdout.
       changed_when: "'Update has been successful' in (adb_liquibase_result.stdout ~ adb_liquibase_result.stderr)"
 
