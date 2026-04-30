@@ -7,6 +7,7 @@ const LABELS: Record<ComponentName, string> = {
   postgres: 'PostgreSQL',
   mongo: 'MongoDB',
   agentsTeam: 'Agents team',
+  riskDashboard: 'Risk dashboard',
 };
 
 // User-facing wording. "Offline" is intentionally vague — we cannot tell

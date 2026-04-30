@@ -1,7 +1,8 @@
-import { Component, OnInit, computed, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { BaseChartDirective } from 'ng2-charts';
 import type { ChartConfiguration, ChartData } from 'chart.js';
+import { ReadinessService } from '../readiness.service';
 import { RiskDashboard, RiskService } from '../risk.service';
 
 const SANCTIONED = new Set(['BY', 'IR', 'KP', 'RU', 'SY', 'VE', 'MM', 'CU']);
@@ -32,7 +33,18 @@ function countryName(code: string): string {
       support tickets (MongoDB). Each chart cites the rule codes that drive it.
     </p>
 
-    @if (loading()) {
+    @if (!riskReady() && !data()) {
+      <section class="placeholder">
+        <h3>Risk Dashboard is bootstrapping</h3>
+        <p>
+          Waiting for the production databases (Oracle Free, PostgreSQL,
+          MongoDB) and the rich banking schema to be in place. This typically
+          clears within a few minutes after first deploy. The status pill in
+          the top-right shows live readiness; this view auto-refreshes once
+          everything is up.
+        </p>
+      </section>
+    } @else if (loading()) {
       <p class="loading">Loading…</p>
     } @else if (error()) {
       <p class="error">Could not load dashboard: {{ error() }}</p>
@@ -239,6 +251,15 @@ function countryName(code: string): string {
     .subtitle a { color: #C74634; }
     .loading, .error, .empty { color: #6B6560; font-size: 0.9rem; padding: 0.5rem 0; }
     .error { color: #C74634; }
+    .placeholder {
+      background: #FFFFFF;
+      border: 1px dashed #C9C2BA;
+      border-radius: 8px;
+      padding: 1.25rem 1.5rem;
+      color: #4A453F;
+    }
+    .placeholder h3 { margin: 0 0 0.4rem; font-family: Georgia, serif; color: #2C2723; font-size: 1.05rem; }
+    .placeholder p { margin: 0; font-size: 0.9rem; line-height: 1.5; }
 
     .kpis {
       display: grid;
@@ -306,17 +327,27 @@ function countryName(code: string): string {
     }
   `,
 })
-export class RiskPageComponent implements OnInit {
+export class RiskPageComponent {
+  private svc = inject(RiskService);
+  private readiness = inject(ReadinessService);
+
   data = signal<RiskDashboard | null>(null);
-  loading = signal(true);
+  loading = signal(false);
   error = signal<string | null>(null);
+  riskReady = this.readiness.riskReady;
 
-  constructor(private svc: RiskService) {}
+  private fetched = false;
 
-  ngOnInit(): void {
-    this.svc.load().subscribe({
-      next: (d) => { this.data.set(d); this.loading.set(false); },
-      error: (e) => { this.error.set(e?.message ?? 'request failed'); this.loading.set(false); },
+  constructor() {
+    effect(() => {
+      if (this.readiness.riskReady() && !this.fetched) {
+        this.fetched = true;
+        this.loading.set(true);
+        this.svc.load().subscribe({
+          next: (d) => { this.data.set(d); this.loading.set(false); },
+          error: (e) => { this.error.set(e?.message ?? 'request failed'); this.loading.set(false); },
+        });
+      }
     });
   }
 

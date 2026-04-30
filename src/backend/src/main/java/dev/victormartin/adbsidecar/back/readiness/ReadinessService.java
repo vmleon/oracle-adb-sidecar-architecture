@@ -53,6 +53,13 @@ public class ReadinessService {
                     Integer.class, teamName);
             return n != null && n > 0;
         }));
+        // Rich banking schema check — /api/v1/risk needs customers (Oracle 003)
+        // and rules.code (Postgres 003-compliance-rich) to be present.
+        components.put("riskDashboard", probe("riskDashboard", () -> {
+            oracleJdbc.queryForObject("SELECT COUNT(*) FROM customers", Integer.class);
+            postgresJdbc.queryForObject("SELECT COUNT(*) FROM rules WHERE code IS NOT NULL", Integer.class);
+            return true;
+        }));
         return new ReadinessSnapshot(overall(components), components);
     }
 
