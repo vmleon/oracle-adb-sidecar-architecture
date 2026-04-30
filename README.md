@@ -8,16 +8,60 @@ This repository is a working live demo of the **Oracle Select AI "AI Proxy Datab
 
 This repo is a working implementation of the stepping-stone pattern. Three Podman containers on the `databases` compute (Oracle Database Free 26ai, PostgreSQL 18, MongoDB 8) stand in for the kind of production databases an enterprise already runs. ADB 26ai is attached alongside them as the _sidecar_ — not the production store. It reaches into each engine via DB_LINK views, letting teams adopt Vector Search, Hybrid Vector Index, Select AI Agents, and the rest of 26ai's feature set over the same data without rehosting or rewriting.
 
-The frontend ships four routes against a small banking demo dataset seeded on first deploy: **accounts + transactions** in Oracle Free, **policies + rules** in PostgreSQL, **support_tickets** in MongoDB.
+## What stays. What's added.
 
-- `/app` — **current app path.** The backend opens direct JDBC/Mongo connections to each production database. Proves every datasource is reachable; this is what your app already does today.
+The whole point of the sidecar pattern is that the box on the left does not change to get the box on the right. The application keeps its existing connections to the production databases; the AI sidecar is bolted on alongside and reaches into the same data through DB_LINK views.
+
+```mermaid
+flowchart LR
+    classDef existing fill:#F5F2EE,stroke:#6B6560,color:#2C2723
+    classDef sidecar  fill:#FDF3F1,stroke:#C74634,color:#2C2723
+    classDef ai       fill:#FFF4DC,stroke:#A88040,color:#542
+
+    subgraph current ["Current System — unchanged"]
+        direction TB
+        app[Your application<br/>frontend + backend]:::existing
+        oracle[(Oracle / Oracle Free<br/>customers · accounts<br/>transactions · branches)]:::existing
+        postgres[(PostgreSQL<br/>policies · rules)]:::existing
+        mongo[(MongoDB<br/>support_tickets)]:::existing
+        app --> oracle
+        app --> postgres
+        app --> mongo
+    end
+
+    subgraph sidecarbox ["AI Sidecar — added alongside (Autonomous Database 26ai)"]
+        direction TB
+        adb[(ADB 26ai)]:::sidecar
+        agents[Select AI Agents<br/>multi-agent teams]:::ai
+        nl2sql[Select AI NL2SQL<br/>V_BNK_* views]:::ai
+        rag[Hybrid Vector Index<br/>policy-doc RAG]:::ai
+        adb --- agents
+        adb --- nl2sql
+        adb --- rag
+    end
+
+    app -. opt-in: AI calls .-> adb
+    adb -. DB_LINK reads .-> oracle
+    adb -. DB_LINK reads .-> postgres
+```
+
+The frontend ships five routes against a small banking demo dataset seeded on first deploy: **customers + branches + accounts + transactions** in Oracle Free 26ai, **policies + rules** in PostgreSQL 18, **support_tickets** in MongoDB 8.
+
+- `/risk` — **Risk Dashboard** (default landing). Reads only from the existing production databases; no ADB involvement. Six KPI cards plus seven charts (sub-CTR structuring watchlist, cross-border wire flows, decline-velocity scatter, KYC pipeline, risk × account-status mix, ticket priority over time, and an active-rule-violations table). Each chart cites the policy and rule codes that drive it.
+- `/app` — **Current System.** The backend opens direct JDBC/Mongo connections to each production database. Proves every datasource is reachable; this is what your app already does today.
 - `/sidecar` — **sidecar path.** The backend queries ADB; ADB resolves `V_ACCOUNTS`, `V_TRANSACTIONS`, `V_POLICIES`, `V_RULES` over DB_LINK. Proves the federated path end-to-end. (Mongo via sidecar is deliberately disabled; see [docs/ISSUE_ADB_HETEROGENEOUS_MONGODB_OBJECT_NOT_FOUND.md](docs/ISSUE_ADB_HETEROGENEOUS_MONGODB_OBJECT_NOT_FOUND.md).)
-- `/agents` — **Select AI Agents.** A four-agent banking investigation team running entirely inside the ADB sidecar (`DBMS_CLOUD_AI_AGENT.RUN_TEAM`). One prompt fans out to a Transaction Analyst, a Compliance Officer (SQL + RAG over a policy-doc vector index), a Customer Care Liaison, and a Case Synthesiser; the page renders the final answer plus a per-task execution trace. See the new "Select AI Agents" section below.
+- `/agents` — **Select AI Agents.** A four-agent banking investigation team running entirely inside the ADB sidecar (`DBMS_CLOUD_AI_AGENT.RUN_TEAM`). One prompt fans out to a Transaction Analyst, a Compliance Officer (SQL + RAG over a policy-doc vector index), a Customer Care Liaison, and a Case Synthesiser; the page renders the final answer plus a per-task execution trace. See the "Select AI Agents" section below.
 - `/measurements` — **direct vs federated dashboard.** Wall-clock timing for every query, persisted asynchronously to ADB, with summary stats and box plots so the "federated is slower — by how much?" question has a data answer.
 
-### `/app` — direct
+### `/risk` — Risk Dashboard
 
-![Current app screenshot](images/current-app.png)
+A compliance & risk overview built from the same production data as `/app`. KPI strip across the top (KYC attention, frozen accounts, high-risk customers, sub-CTR activity, decline velocity, open HIGH-priority tickets) followed by seven chart cards. Every chart card has a banking-language footer that cites the relevant rule codes (`R-AML-005`, `R-FRAUD-007`, `R-OFAC-001`, …) and policy codes (`P-CTR-01`, `P-OFAC-01`, `P-KYC-01`, …) so a compliance officer can read it without a translator.
+
+The dashboard is intentionally the human counterpart to `/agents`: the same patterns that get computed visually here are what the Select AI investigation team narrates in plain English over there.
+
+### `/app` — Current System
+
+![Current System screenshot](images/current-app.png)
 
 Five cards, one per table (accounts, transactions, policies, rules, support_tickets), each with a wall-clock badge measured at the backend boundary. One click fans out into five parallel HTTP requests and each card fills in independently as its response returns.
 
@@ -103,6 +147,18 @@ flowchart LR
 
 **Mongo support tickets are wired but deferred.** `V_BNK_SUPPORT_TICKETS` is shipped as a commented-out Liquibase changeset; the seed in `database/mongo/init.js` is extended from 4 to ~25 documents so the data is in place. When the ADB heterogeneous-gateway issue (`docs/ISSUE_ADB_HETEROGENEOUS_MONGODB_OBJECT_NOT_FOUND.md`) is resolved, three small Liquibase edits flip the CARE agent online — see §14, "Mongo flip-the-switch".
 
+### `/measurements` — direct vs federated
+
+Customers asked first about the ADB sidecar architecture typically ask: _how much does the federated path cost in latency?_ The `/measurements` route answers that directly.
+
+**What is timed.** Exactly one JDBC/Mongo call per measurement, at the backend boundary (`System.nanoTime()` immediately before the call, again immediately after). HTTP handling, JSON serialization, and the measurement-row INSERT are all outside the timed region — the INSERT is fired asynchronously on a dedicated executor so it can't pollute the number.
+
+**Where it lives.** Rows are persisted to `QUERY_MEASUREMENTS` in ADB. Each row carries `query_id`, `route` (`direct` | `federated`), `elapsed_ms`, `rows_returned`, `success`, `run_id`, and `measured_at`.
+
+**How to read the dashboard.** The summary table shows `n`, mean, and p95 for both routes side by side per query, with a shaded `N` column marking the start of each section. The rightmost `Δ mean (ms)` column is `federated_mean − direct_mean` in absolute ms. Below the table, box plots show the distribution shape for each query. "Trim outliers (IQR)" is on by default and strips points outside `[Q1 − 1.5·IQR, Q3 + 1.5·IQR]` — without it, rare warm-up runs in the 5000-7000 ms range dominate the Y axis and the boxes collapse to flat lines. Toggle it off if you want to see those outliers.
+
+![Measurements dashboard screenshot](images/measurements.png)
+
 ## Architecture
 
 | Tier                            | Component                                 | Subnet                   | Notes                                                                                |
@@ -124,7 +180,7 @@ flowchart TB
     end
 
     subgraph appnet [App subnet 10.0.2.0/24]
-        front["Front · nginx + Angular 21<br/>/app · /sidecar · /agents · /measurements"]
+        front["Front · nginx + Angular 21<br/>/risk · /app · /sidecar · /agents · /measurements"]
         back[Back<br/>Spring Boot 3.5 / Java 23]
     end
 
@@ -179,114 +235,13 @@ flowchart TB
     └── mongo/init.js                       # mongosh schema seed
 ```
 
-## Provisioning flow
+## Deploying
 
-> **First time only:** create the virtualenv and install Python dependencies.
-
-```bash
-python -m venv venv
-```
-
-Activate the virtualenv (every new shell):
-
-```bash
-source venv/bin/activate
-```
-
-```bash
-pip install -r requirements.txt
-```
-
-Interactive OCI config (profile, region, compartment, SSH key). Generates an Oracle-compliant DB password. Writes `.env`.
-
-```bash
-python manage.py setup
-```
-
-Builds the Spring Boot jar (`./gradlew build -x test`) and the Angular dist (`npm install && npm run build`).
-
-```bash
-python manage.py build
-```
-
-Renders `deploy/tf/app/terraform.tfvars` from `.env`.
-
-```bash
-python manage.py tf
-```
-
-Provisions VCN, ADB 26ai, 4 computes, LB, Object Storage bucket, and 7-day pre-authenticated requests (PARs) for every artifact.
-
-```bash
-cd deploy/tf/app
-terraform init
-terraform plan -out=tfplan
-```
-
-```bash
-terraform apply tfplan
-```
-
-Cloud-init on each instance pulls its artifact via PAR and runs Ansible **locally** (no SSH between instances).
-
-Prints the LB public IP, ops SSH command, and the demo endpoint URL.
-
-```bash
-cd ../../..
-python manage.py info
-```
-
-## Prerequisites
-
-- OCI account with API key in `~/.oci/config`
-- Python 3.9+ (`pip install -r requirements.txt`)
-- Terraform 1.x
-- Java 23 (Temurin or Oracle JDK)
-- Node 22+, npm 10+
-- Gradle (one-time, to bootstrap the wrapper: `cd src/backend && gradle wrapper --gradle-version 8.13`)
-- An RSA SSH keypair (e.g. `~/.ssh/id_rsa` + `id_rsa.pub`)
-
-## Verifying
-
-After `terraform apply`, print the endpoints and SSH command:
-
-```bash
-python manage.py info
-```
-
-Open the load balancer IP in a browser and click through `/app`, `/sidecar`, `/agents`, and `/measurements`. The backend health check, for quick sanity:
-
-```bash
-curl http://<lb_public_ip>/api/v1/health
-```
-
-## Measuring the federated tax
-
-Customers asked first about the ADB sidecar architecture typically ask: _how much does the federated path cost in latency?_ The `/measurements` route answers that directly.
-
-**What is timed.** Exactly one JDBC/Mongo call per measurement, at the backend boundary (`System.nanoTime()` immediately before the call, again immediately after). HTTP handling, JSON serialization, and the measurement-row INSERT are all outside the timed region — the INSERT is fired asynchronously on a dedicated executor so it can't pollute the number.
-
-**Where it lives.** Rows are persisted to `QUERY_MEASUREMENTS` in ADB. Each row carries `query_id`, `route` (`direct` | `federated`), `elapsed_ms`, `rows_returned`, `success`, `run_id`, and `measured_at`.
-
-**How to read the dashboard.** The summary table shows `n`, mean, and p95 for both routes side by side per query, with a shaded `N` column marking the start of each section. The rightmost `Δ mean (ms)` column is `federated_mean − direct_mean` in absolute ms. Below the table, box plots show the distribution shape for each query. "Trim outliers (IQR)" is on by default and strips points outside `[Q1 − 1.5·IQR, Q3 + 1.5·IQR]` — without it, rare warm-up runs in the 5000-7000 ms range dominate the Y axis and the boxes collapse to flat lines. Toggle it off if you want to see those outliers.
-
-![Measurements dashboard screenshot](images/measurements.png)
-
-## Cleanup
-
-```bash
-cd deploy/tf/app && terraform destroy
-```
-
-`manage.py clean` refuses if Terraform state still has resources:
-
-```bash
-cd ../../..
-python manage.py clean
-```
+End-to-end provisioning, prerequisites, and cleanup live in **[DEPLOY.md](DEPLOY.md)** — virtualenv setup, the `manage.py setup → build → tf → info` flow, the `terraform apply` step, and how to tear everything down.
 
 ## More info
 
+- [DEPLOY.md](DEPLOY.md) — provisioning prerequisites, the `manage.py` flow, and cleanup.
 - [docs/FEDERATED_QUERIES.md](docs/FEDERATED_QUERIES.md) — the deep dive on how ADB reaches Oracle Free / Postgres / Mongo through `DBMS_CLOUD_ADMIN.CREATE_DATABASE_LINK`, with the two hard requirements (DNS-resolvable hostname, Mongo data outside `admin`) and the `ORA-17008` mid-run recovery path.
 - [docs/AGENTS_DEMO.md](docs/AGENTS_DEMO.md) — manual runbook for the five Select AI Agents demo prompts, with the expected agent fan-out and what to point at on screen for each one.
 - [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) — day-two playbook for each tier (ops, databases, back, front) plus how to poke at each database from the ops bastion.

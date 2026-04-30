@@ -9,7 +9,7 @@ import { StatusPillComponent } from './status-pill/status-pill.component';
   template: `
     <header>
       <h1>
-        <a routerLink="/app">
+        <a routerLink="/risk">
           <span class="oracle-red">Oracle</span> ADB Sidecar Architecture
         </a>
       </h1>

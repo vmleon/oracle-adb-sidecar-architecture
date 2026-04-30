@@ -14,7 +14,7 @@ interface Entry {
   selector: 'app-app-page',
   imports: [CardComponent],
   template: `
-    <h2>Current app</h2>
+    <h2>Current System</h2>
     <p class="subtitle">
       The backend opens a direct JDBC/Mongo connection to each production
       database. This is how your current application already works today.

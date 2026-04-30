@@ -1,7 +1,12 @@
 import { Routes } from '@angular/router';
 
 export const routes: Routes = [
-  { path: '', redirectTo: 'app', pathMatch: 'full' },
+  { path: '', redirectTo: 'risk', pathMatch: 'full' },
+  {
+    path: 'risk',
+    loadComponent: () =>
+      import('./pages/risk-page.component').then((m) => m.RiskPageComponent),
+  },
   {
     path: 'app',
     loadComponent: () =>

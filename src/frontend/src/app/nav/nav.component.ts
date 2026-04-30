@@ -7,7 +7,8 @@ import { RouterLink, RouterLinkActive } from '@angular/router';
   template: `
     <nav class="nav">
       <div class="left">
-        <a routerLink="/app" routerLinkActive="active">Current app</a>
+        <a routerLink="/risk" routerLinkActive="active">Risk Dashboard</a>
+        <a routerLink="/app" routerLinkActive="active">Current System</a>
       </div>
       <div class="right">
         <a routerLink="/sidecar" routerLinkActive="active">ADB sidecar</a>
