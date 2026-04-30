@@ -30,7 +30,7 @@ function countryName(code: string): string {
       Compliance & risk overview built from the same data as the
       <a routerLink="/app">Current System</a> route — customers, accounts,
       transactions (Oracle Free), policies and rules (PostgreSQL), and
-      support tickets (MongoDB). Each chart cites the rule codes that drive it.
+      support tickets (MongoDB).
     </p>
 
     @if (!riskReady() && !data()) {
