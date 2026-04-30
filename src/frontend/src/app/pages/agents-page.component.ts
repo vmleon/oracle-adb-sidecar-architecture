@@ -21,6 +21,48 @@ const CHIPS: string[] = [
   "What policies apply to international wires above $10K?",
 ];
 
+// Per-agent human-team time estimates, in minutes of focused work. The
+// numbers are deliberately broad — the goal is order-of-magnitude
+// comparison ("seconds for the AI vs hours for a team"), not precise
+// staffing. Edit these if you have a better local benchmark.
+interface HumanTaskMeta {
+  label: string;
+  description: string;
+  loMin: number;
+  hiMin: number;
+}
+const HUMAN_TASK_META: Record<string, HumanTaskMeta> = {
+  TRANSACTION_ANALYST: {
+    label: "Transaction Analyst",
+    description:
+      "pull customer / account / transaction history from the warehouse and spot patterns",
+    loMin: 30,
+    hiMin: 60,
+  },
+  COMPLIANCE_OFFICER: {
+    label: "Compliance Officer",
+    description:
+      "run rule queries and read the relevant policy documents to cite the right clauses",
+    loMin: 60,
+    hiMin: 120,
+  },
+  CUSTOMER_CARE_LIAISON: {
+    label: "Customer Care Liaison",
+    description:
+      "pull customer history, support tickets, and prior interactions",
+    loMin: 15,
+    hiMin: 30,
+  },
+  CASE_SYNTHESIZER: {
+    label: "Case Synthesiser",
+    description: "read all specialist reports and draft the final case file",
+    loMin: 30,
+    hiMin: 60,
+  },
+};
+const COORDINATION_LO_MIN = 30;
+const COORDINATION_HI_MIN = 60;
+
 @Component({
   selector: "app-agents-page",
   standalone: true,
@@ -38,12 +80,30 @@ const CHIPS: string[] = [
     <div class="conversation">
       <div *ngFor="let turn of turns()" [class]="'bubble ' + turn.role">
         <div class="text" [innerHTML]="renderMarkdown(turn.text)"></div>
-        <div
-          *ngIf="turn.role === 'assistant' && turn.elapsedMillis"
-          class="badge"
-        >
-          {{ turn.elapsedMillis }} ms
+        <div *ngIf="turn.role === 'assistant' && turn.elapsedMillis" class="timing">
+          <span class="badge ai">AI: {{ formatDuration(turn.elapsedMillis) }}</span>
+          <span *ngIf="turn.trace" class="badge human">
+            Human team: ~{{ humanRange(turn.trace) }} (rough estimate)
+          </span>
         </div>
+        <details *ngIf="turn.trace" class="human-est">
+          <summary>How the human-team estimate is built</summary>
+          <ul>
+            <li *ngFor="let row of humanBreakdown(turn.trace)">
+              <strong>{{ row.label }}</strong> — {{ row.description }}:
+              ~{{ row.loMin }}–{{ row.hiMin }} min
+            </li>
+            <li>
+              <em>Coordination &amp; meetings between specialists:</em>
+              ~{{ coordinationLo }}–{{ coordinationHi }} min
+            </li>
+          </ul>
+          <p class="disclaimer">
+            Order-of-magnitude estimate of focused work for a small banking
+            compliance team. Real wall-clock time depends on staffing,
+            prioritisation, and ticket queue depth and is usually longer.
+          </p>
+        </details>
         <button
           *ngIf="turn.trace"
           (click)="turn.showTrace = !turn.showTrace"
@@ -58,7 +118,7 @@ const CHIPS: string[] = [
           <div *ngFor="let t of turn.trace.tasks" class="task">
             <div class="task-header">
               Task #{{ t.taskOrder }} {{ t.agentName }} ·
-              {{ t.durationMillis }} ms · {{ t.state }}
+              {{ formatDuration(t.durationMillis) }} · {{ t.state }}
             </div>
             <details>
               <summary>Input</summary>
@@ -69,7 +129,7 @@ const CHIPS: string[] = [
             >
               <details>
                 <summary>
-                  Tool: {{ tool.toolName }} ({{ tool.durationMillis }} ms)
+                  Tool: {{ tool.toolName }} ({{ formatDuration(tool.durationMillis) }})
                 </summary>
                 <pre>{{ tool.input }}</pre>
                 <pre>{{ tool.output }}</pre>
@@ -167,13 +227,46 @@ const CHIPS: string[] = [
         border-radius: 3px;
         font-size: 0.9em;
       }
+      .timing {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 6px;
+      }
       .badge {
         display: inline-block;
-        margin-top: 6px;
         padding: 2px 8px;
-        background: #ddd;
         border-radius: 4px;
         font-size: 0.85em;
+      }
+      .badge.ai {
+        background: #1A7F3C;
+        color: #FFFFFF;
+      }
+      .badge.human {
+        background: #E8DCC9;
+        color: #2C2723;
+      }
+      .human-est {
+        margin-top: 8px;
+        font-size: 0.85em;
+      }
+      .human-est summary {
+        cursor: pointer;
+        color: #4A453F;
+      }
+      .human-est ul {
+        margin: 0.4em 0 0.5em 1.25em;
+        padding: 0;
+      }
+      .human-est li {
+        margin: 0.15em 0;
+        line-height: 1.4;
+      }
+      .human-est .disclaimer {
+        margin: 0.5em 0 0;
+        color: #6B6560;
+        font-style: italic;
       }
       .trace-toggle {
         margin-top: 8px;
@@ -274,6 +367,62 @@ export class AgentsPageComponent {
 
   toolsFor(trace: AgentRunResponse["trace"], taskOrder: number) {
     return trace ? trace.tools.filter((t) => t.taskOrder === taskOrder) : [];
+  }
+
+  // Show sub-second values in ms (tool calls can be < 1 s); anything
+  // longer in seconds with one decimal. Agent runs are tens of seconds,
+  // so the seconds form is the meaningful one to compare with the
+  // human-team estimate.
+  formatDuration(ms: number | null | undefined): string {
+    if (ms == null) return "";
+    if (ms < 1000) return `${ms} ms`;
+    return `${(ms / 1000).toFixed(1)} s`;
+  }
+
+  coordinationLo = COORDINATION_LO_MIN;
+  coordinationHi = COORDINATION_HI_MIN;
+
+  humanBreakdown(trace: AgentRunResponse["trace"]): {
+    label: string;
+    description: string;
+    loMin: number;
+    hiMin: number;
+  }[] {
+    if (!trace) return [];
+    const seen = new Set<string>();
+    const rows: ReturnType<AgentsPageComponent["humanBreakdown"]> = [];
+    for (const t of trace.tasks) {
+      const meta = HUMAN_TASK_META[t.agentName];
+      if (!meta || seen.has(t.agentName)) continue;
+      seen.add(t.agentName);
+      rows.push({
+        label: meta.label,
+        description: meta.description,
+        loMin: meta.loMin,
+        hiMin: meta.hiMin,
+      });
+    }
+    return rows;
+  }
+
+  humanRange(trace: AgentRunResponse["trace"]): string {
+    if (!trace) return "";
+    let lo = COORDINATION_LO_MIN;
+    let hi = COORDINATION_HI_MIN;
+    const seen = new Set<string>();
+    for (const t of trace.tasks) {
+      if (seen.has(t.agentName)) continue;
+      seen.add(t.agentName);
+      const meta = HUMAN_TASK_META[t.agentName];
+      if (meta) {
+        lo += meta.loMin;
+        hi += meta.hiMin;
+      }
+    }
+    if (hi >= 90) {
+      return `${(lo / 60).toFixed(1)}–${(hi / 60).toFixed(1)} hours`;
+    }
+    return `${lo}–${hi} min`;
   }
 
   // Minimal Markdown subset that the agents actually emit: bold, italics,
