@@ -51,7 +51,7 @@ flowchart LR
 
 The frontend ships five routes against a small banking demo dataset seeded on first deploy: **customers + branches + accounts + transactions** in Oracle Free 26ai, **policies + rules** in PostgreSQL 18, **support_tickets** in MongoDB 8.
 
-- `/risk` — **Risk Dashboard** (default landing). Reads only from the existing production databases; no ADB involvement. Six KPI cards plus seven charts (sub-CTR structuring watchlist, cross-border wire flows, decline-velocity scatter, KYC pipeline, risk × account-status mix, ticket priority over time, and an active-rule-violations table). Each chart cites the policy and rule codes that drive it.
+- `/risk` — **Risk Dashboard** (default landing). Reads only from the existing production databases; no ADB involvement. Six KPI cards plus six charts (sub-CTR structuring watchlist, cross-border wire flows, KYC pipeline, risk × account-status mix, ticket priority over time, and an active-rule-violations table). Each chart cites the policy and rule codes that drive it.
 - `/app` — **Current System.** The backend opens direct JDBC/Mongo connections to each production database. Proves every datasource is reachable; this is what your app already does today.
 - `/sidecar` — **sidecar path.** The backend queries ADB; ADB resolves `V_ACCOUNTS`, `V_TRANSACTIONS`, `V_POLICIES`, `V_RULES` over DB_LINK. Proves the federated path end-to-end. (Mongo via sidecar is deliberately disabled; see [docs/ISSUE_ADB_HETEROGENEOUS_MONGODB_OBJECT_NOT_FOUND.md](docs/ISSUE_ADB_HETEROGENEOUS_MONGODB_OBJECT_NOT_FOUND.md).)
 - `/agents` — **Select AI Agents.** A four-agent banking investigation team running entirely inside the ADB sidecar (`DBMS_CLOUD_AI_AGENT.RUN_TEAM`). One prompt fans out to a Transaction Analyst, a Compliance Officer (SQL + RAG over a policy-doc vector index), a Customer Care Liaison, and a Case Synthesiser; the page renders the final answer plus a per-task execution trace. See the "Select AI Agents" section below.
@@ -59,7 +59,9 @@ The frontend ships five routes against a small banking demo dataset seeded on fi
 
 ### `/risk` — Risk Dashboard
 
-A compliance & risk overview built from the same production data as `/app`. KPI strip across the top (KYC attention, frozen accounts, high-risk customers, sub-CTR activity, decline velocity, open HIGH-priority tickets) followed by seven chart cards. Every chart card has a banking-language footer that cites the relevant rule codes (`R-AML-005`, `R-FRAUD-007`, `R-OFAC-001`, …) and policy codes (`P-CTR-01`, `P-OFAC-01`, `P-KYC-01`, …) so a compliance officer can read it without a translator.
+![Risk Dashboard screenshot](images/risk.png)
+
+A compliance & risk overview built from the same production data as `/app`. KPI strip across the top (KYC attention, frozen accounts, high-risk customers, sub-CTR activity, decline velocity, open HIGH-priority tickets) followed by six chart cards. Every chart card has a banking-language footer that cites the relevant rule codes (`R-AML-005`, `R-FRAUD-007`, `R-OFAC-001`, …) and policy codes (`P-CTR-01`, `P-OFAC-01`, `P-KYC-01`, …) so a compliance officer can read it without a translator.
 
 The dashboard is intentionally the human counterpart to `/agents`: the same patterns that get computed visually here are what the Select AI investigation team narrates in plain English over there.
 
