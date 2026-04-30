@@ -5,6 +5,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.bson.Document;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -19,6 +20,16 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1/risk")
 public class RiskController {
+
+    // Single source of truth for OFAC-sanctioned countries: drives the
+    // R-OFAC-001 rule SQL, the per-row `sanctioned` flag on the cross-border
+    // wires chart, and any future surface that needs to know. The frontend
+    // consumes the boolean directly so it can never drift from this list.
+    private static final List<String> OFAC_SANCTIONED_COUNTRIES =
+            List.of("BY", "IR", "KP", "RU", "SY", "VE", "MM", "CU");
+    private static final Set<String> OFAC_SANCTIONED_SET = Set.copyOf(OFAC_SANCTIONED_COUNTRIES);
+    private static final String OFAC_SANCTIONED_SQL_LIST =
+            "'" + String.join("','", OFAC_SANCTIONED_COUNTRIES) + "'";
 
     private static final String KPI_KYC_ATTENTION =
             "SELECT COUNT(*) FROM customers WHERE kyc_status IN ('PENDING','EXPIRED')";
@@ -145,7 +156,7 @@ public class RiskController {
                     """),
             Map.entry("R-OFAC-001",
                     "SELECT COUNT(*) FROM transactions "
-                    + "WHERE merchant_country IN ('BY','IR','KP','RU','SY','VE','MM','CU')"),
+                    + "WHERE merchant_country IN (" + OFAC_SANCTIONED_SQL_LIST + ")"),
             Map.entry("R-CTR-001",
                     "SELECT COUNT(*) FROM transactions "
                     + "WHERE channel = 'BRANCH' AND amount > 10000"),
@@ -199,12 +210,20 @@ public class RiskController {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("kpis", kpis);
         body.put("subCtrWatchlist", oracleJdbc.queryForList(CHART_SUB_CTR_WATCHLIST));
-        body.put("crossBorderWires", oracleJdbc.queryForList(CHART_CROSS_BORDER_WIRES));
+        body.put("crossBorderWires", crossBorderWires());
         body.put("kycPipeline", kycPipeline);
         body.put("riskByStatus", oracleJdbc.queryForList(CHART_RISK_BY_STATUS));
         body.put("ticketsByPriority", ticketsByPriority());
         body.put("rules", rules);
         return body;
+    }
+
+    private List<Map<String, Object>> crossBorderWires() {
+        List<Map<String, Object>> rows = oracleJdbc.queryForList(CHART_CROSS_BORDER_WIRES);
+        for (Map<String, Object> row : rows) {
+            row.put("sanctioned", OFAC_SANCTIONED_SET.contains(row.get("country")));
+        }
+        return rows;
     }
 
     private long openHighPriorityTickets() {

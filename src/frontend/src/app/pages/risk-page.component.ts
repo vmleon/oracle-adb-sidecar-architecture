@@ -5,8 +5,6 @@ import type { ChartConfiguration, ChartData } from 'chart.js';
 import { ReadinessService } from '../readiness.service';
 import { RiskDashboard, RiskService } from '../risk.service';
 
-const SANCTIONED = new Set(['BY', 'IR', 'KP', 'RU', 'SY', 'VE', 'MM', 'CU']);
-
 const COUNTRY_NAMES: Record<string, string> = {
   BY: 'Belarus', IR: 'Iran', KP: 'North Korea', RU: 'Russia',
   SY: 'Syria', VE: 'Venezuela', MM: 'Myanmar', CU: 'Cuba',
@@ -84,11 +82,11 @@ function countryName(code: string): string {
             </thead>
             <tbody>
               @for (r of d.crossBorderWires; track r.country) {
-                <tr [class.flag]="isSanctioned(r.country)">
+                <tr [class.flag]="r.sanctioned">
                   <td>{{ name(r.country) }}</td>
                   <td><code>{{ r.country }}</code></td>
                   <td>
-                    @if (isSanctioned(r.country)) {
+                    @if (r.sanctioned) {
                       <span class="badge violation">OFAC sanctioned</span>
                     } @else {
                       <span class="badge ok">Permitted</span>
@@ -332,7 +330,6 @@ export class RiskPageComponent {
     });
   }
 
-  isSanctioned(code: string): boolean { return SANCTIONED.has(code); }
   name(code: string): string { return countryName(code); }
   money(n: number): string {
     return new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(n);

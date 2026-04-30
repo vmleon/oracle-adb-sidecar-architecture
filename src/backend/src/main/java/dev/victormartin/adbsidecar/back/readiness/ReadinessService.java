@@ -42,12 +42,15 @@ public class ReadinessService {
     }
 
     public ReadinessSnapshot snapshot() {
-        Map<String, String> components = new LinkedHashMap<>();
-        components.put("adb",        probe("adb",        () -> { adbJdbc.queryForObject("SELECT 1 FROM DUAL", Integer.class); return true; }));
-        components.put("oracleFree", probe("oracleFree", () -> { oracleJdbc.queryForObject("SELECT 1 FROM DUAL", Integer.class); return true; }));
-        components.put("postgres",   probe("postgres",   () -> { postgresJdbc.queryForObject("SELECT 1", Integer.class); return true; }));
-        components.put("mongo",      probe("mongo",      () -> { mongo.getDb().runCommand(new Document("ping", 1)); return true; }));
-        components.put("agentsTeam", probe("agentsTeam", () -> {
+        // Kick off every probe up front so they run in parallel; collect after.
+        // Sequential probes would stack timeouts (worst case 6 × PROBE_TIMEOUT
+        // on a network blip); in parallel the snapshot is bound by the slowest.
+        Map<String, CompletableFuture<Boolean>> futures = new LinkedHashMap<>();
+        futures.put("adb",        runProbe(() -> { adbJdbc.queryForObject("SELECT 1 FROM DUAL", Integer.class); return true; }));
+        futures.put("oracleFree", runProbe(() -> { oracleJdbc.queryForObject("SELECT 1 FROM DUAL", Integer.class); return true; }));
+        futures.put("postgres",   runProbe(() -> { postgresJdbc.queryForObject("SELECT 1", Integer.class); return true; }));
+        futures.put("mongo",      runProbe(() -> { mongo.getDb().runCommand(new Document("ping", 1)); return true; }));
+        futures.put("agentsTeam", runProbe(() -> {
             Integer n = adbJdbc.queryForObject(
                     "SELECT COUNT(*) FROM USER_AI_AGENT_TEAMS WHERE AGENT_TEAM_NAME = ? AND STATUS = 'ENABLED'",
                     Integer.class, teamName);
@@ -55,19 +58,27 @@ public class ReadinessService {
         }));
         // Rich banking schema check — /api/v1/risk needs customers (Oracle 003)
         // and rules.code (Postgres 003-compliance-rich) to be present.
-        components.put("riskDashboard", probe("riskDashboard", () -> {
+        futures.put("riskDashboard", runProbe(() -> {
             oracleJdbc.queryForObject("SELECT COUNT(*) FROM customers", Integer.class);
             postgresJdbc.queryForObject("SELECT COUNT(*) FROM rules WHERE code IS NOT NULL", Integer.class);
             return true;
         }));
+
+        Map<String, String> components = new LinkedHashMap<>();
+        for (Map.Entry<String, CompletableFuture<Boolean>> e : futures.entrySet()) {
+            components.put(e.getKey(), collect(e.getKey(), e.getValue()));
+        }
         return new ReadinessSnapshot(overall(components), components);
     }
 
-    private String probe(String name, BooleanSupplier check) {
+    private CompletableFuture<Boolean> runProbe(BooleanSupplier check) {
+        return CompletableFuture.supplyAsync(check::getAsBoolean);
+    }
+
+    private String collect(String name, CompletableFuture<Boolean> future) {
         boolean ok;
         try {
-            ok = CompletableFuture.supplyAsync(check::getAsBoolean)
-                    .get(PROBE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            ok = future.get(PROBE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         } catch (Exception e) {
             ok = false;
         }

@@ -83,11 +83,11 @@ const COORDINATION_HI_MIN = 60;
         <div *ngIf="turn.role === 'assistant' && turn.elapsedMillis" class="timing">
           <span class="badge ai">AI: {{ formatDuration(turn.elapsedMillis) }}</span>
           <div class="badge human pill" tabindex="0">
-            <span>Human team: ~{{ humanRange() }} (hover for breakdown)</span>
+            <span>Human team: ~{{ humanRange }} (hover for breakdown)</span>
             <div class="popup">
               <h4>Estimated effort for a small banking team</h4>
               <ul>
-                <li *ngFor="let row of humanBreakdown()">
+                <li *ngFor="let row of humanBreakdown">
                   <strong>{{ row.label }}</strong>
                   <span class="time">~{{ row.loMin }}–{{ row.hiMin }} min</span>
                   <div class="desc">{{ row.description }}</div>
@@ -423,34 +423,20 @@ export class AgentsPageComponent {
   coordinationHi = COORDINATION_HI_MIN;
 
   // The BANKING_INVESTIGATION_TEAM always runs the same four agents in
-  // sequence (see README §Select AI Agents). Estimates therefore don't
-  // need the trace — they're a property of the team, not of a specific
-  // run. This also keeps the badge visible when the backend returns a
-  // null trace.
-  humanBreakdown(): {
-    label: string;
-    description: string;
-    loMin: number;
-    hiMin: number;
-  }[] {
-    return Object.values(HUMAN_TASK_META).map((meta) => ({
-      label: meta.label,
-      description: meta.description,
-      loMin: meta.loMin,
-      hiMin: meta.hiMin,
-    }));
-  }
+  // sequence (see README §Select AI Agents). Estimates are a property of
+  // the team, not of a specific run, so we precompute once at class init
+  // instead of recomputing on every change-detection tick.
+  humanBreakdown: HumanTaskMeta[] = Object.values(HUMAN_TASK_META);
 
-  humanRange(): string {
+  humanRange: string = (() => {
     const totals = Object.values(HUMAN_TASK_META).reduce(
       (acc, meta) => ({ lo: acc.lo + meta.loMin, hi: acc.hi + meta.hiMin }),
       { lo: COORDINATION_LO_MIN, hi: COORDINATION_HI_MIN },
     );
-    if (totals.hi >= 90) {
-      return `${(totals.lo / 60).toFixed(1)}–${(totals.hi / 60).toFixed(1)} hours`;
-    }
-    return `${totals.lo}–${totals.hi} min`;
-  }
+    return totals.hi >= 90
+      ? `${(totals.lo / 60).toFixed(1)}–${(totals.hi / 60).toFixed(1)} hours`
+      : `${totals.lo}–${totals.hi} min`;
+  })();
 
   // Minimal Markdown subset that the agents actually emit: bold, italics,
   // bullet lists, inline code, and paragraph breaks. HTML-escape first so

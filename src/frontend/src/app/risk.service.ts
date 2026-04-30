@@ -23,6 +23,7 @@ export interface CrossBorderRow {
   country: string;
   txnCount: number;
   totalAmount: number;
+  sanctioned: boolean;
 }
 
 export interface KycPipeline {
