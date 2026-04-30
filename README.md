@@ -79,7 +79,7 @@ Same five cards, same dataset, but every query is now routed through the ADB sid
 
 ### `/agents` — Select AI Agents
 
-![Select AI Agents screenshot](images/agents.png) <!-- captured after first deploy; see §13.2 -->
+![Select AI Agents screenshot](images/agents.png)
 
 The same banking dataset, but every question is now answered by a team of four
 agents collaborating inside ADB. The backend issues one
@@ -151,7 +151,7 @@ flowchart LR
 4. _Why is Jamal Reed's checking account frozen?_
 5. _What policies apply to international wires above $10K?_
 
-**Mongo support tickets are wired but deferred.** `V_BNK_SUPPORT_TICKETS` is shipped as a commented-out Liquibase changeset; the seed in `database/mongo/init.js` is extended from 4 to ~25 documents so the data is in place. When the ADB heterogeneous-gateway issue (`docs/ISSUE_ADB_HETEROGENEOUS_MONGODB_OBJECT_NOT_FOUND.md`) is resolved, three small Liquibase edits flip the CARE agent online — see §14, "Mongo flip-the-switch".
+**Mongo support tickets are wired but deferred.** `V_BNK_SUPPORT_TICKETS` is shipped as a commented-out Liquibase changeset; the seed in `database/mongo/init.js` is extended from 4 to ~25 documents so the data is in place. When the ADB heterogeneous-gateway issue (`docs/ISSUE_ADB_HETEROGENEOUS_MONGODB_OBJECT_NOT_FOUND.md`) is resolved, three small Liquibase edits flip the CARE agent online.
 
 ### `/measurements` — direct vs federated
 
@@ -249,8 +249,9 @@ End-to-end provisioning, prerequisites, and cleanup live in **[DEPLOY.md](DEPLOY
 
 - [DEPLOY.md](DEPLOY.md) — provisioning prerequisites, the `manage.py` flow, and cleanup.
 - [docs/FEDERATED_QUERIES.md](docs/FEDERATED_QUERIES.md) — the deep dive on how ADB reaches Oracle Free / Postgres / Mongo through `DBMS_CLOUD_ADMIN.CREATE_DATABASE_LINK`, with the two hard requirements (DNS-resolvable hostname, Mongo data outside `admin`) and the `ORA-17008` mid-run recovery path.
-- [docs/AGENTS_DEMO.md](docs/AGENTS_DEMO.md) — manual runbook for the five Select AI Agents demo prompts, with the expected agent fan-out and what to point at on screen for each one.
 - [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) — day-two playbook for each tier (ops, databases, back, front) plus how to poke at each database from the ops bastion.
+- [docs/ISSUE_DB_LINK_GATEWAY_IDLE_TIMEOUT.md](docs/ISSUE_DB_LINK_GATEWAY_IDLE_TIMEOUT.md) — the heterogeneous-gateway idle drop that breaks `RUN_TEAM`, and the layered keep-warm fix.
+- [docs/ISSUE_ADB_HETEROGENEOUS_MONGODB_OBJECT_NOT_FOUND.md](docs/ISSUE_ADB_HETEROGENEOUS_MONGODB_OBJECT_NOT_FOUND.md) — known issue: the third heterogeneous engine (Mongo via `MONGO_LINK`) is unusable due to a DataDirect ODBC bug.
 - [NOTES.md](NOTES.md) — what's intentionally deferred and the iteration roadmap.
 
 ### Official Oracle references
