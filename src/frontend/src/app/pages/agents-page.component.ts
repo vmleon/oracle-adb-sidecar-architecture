@@ -82,28 +82,30 @@ const COORDINATION_HI_MIN = 60;
         <div class="text" [innerHTML]="renderMarkdown(turn.text)"></div>
         <div *ngIf="turn.role === 'assistant' && turn.elapsedMillis" class="timing">
           <span class="badge ai">AI: {{ formatDuration(turn.elapsedMillis) }}</span>
-          <span *ngIf="turn.trace" class="badge human">
-            Human team: ~{{ humanRange(turn.trace) }} (rough estimate)
-          </span>
+          <div class="badge human pill" tabindex="0">
+            <span>Human team: ~{{ humanRange() }} (hover for breakdown)</span>
+            <div class="popup">
+              <h4>Estimated effort for a small banking team</h4>
+              <ul>
+                <li *ngFor="let row of humanBreakdown()">
+                  <strong>{{ row.label }}</strong>
+                  <span class="time">~{{ row.loMin }}–{{ row.hiMin }} min</span>
+                  <div class="desc">{{ row.description }}</div>
+                </li>
+                <li>
+                  <strong>Coordination &amp; meetings</strong>
+                  <span class="time">~{{ coordinationLo }}–{{ coordinationHi }} min</span>
+                  <div class="desc">handoffs between specialists</div>
+                </li>
+              </ul>
+              <p class="disclaimer">
+                Order-of-magnitude estimate of focused work. Real wall-clock
+                time depends on staffing, prioritisation, and ticket queue
+                depth and is usually longer.
+              </p>
+            </div>
+          </div>
         </div>
-        <details *ngIf="turn.trace" class="human-est">
-          <summary>How the human-team estimate is built</summary>
-          <ul>
-            <li *ngFor="let row of humanBreakdown(turn.trace)">
-              <strong>{{ row.label }}</strong> — {{ row.description }}:
-              ~{{ row.loMin }}–{{ row.hiMin }} min
-            </li>
-            <li>
-              <em>Coordination &amp; meetings between specialists:</em>
-              ~{{ coordinationLo }}–{{ coordinationHi }} min
-            </li>
-          </ul>
-          <p class="disclaimer">
-            Order-of-magnitude estimate of focused work for a small banking
-            compliance team. Real wall-clock time depends on staffing,
-            prioritisation, and ticket queue depth and is usually longer.
-          </p>
-        </details>
         <button
           *ngIf="turn.trace"
           (click)="turn.showTrace = !turn.showTrace"
@@ -151,9 +153,9 @@ const COORDINATION_HI_MIN = 60;
         placeholder="Ask the team..."
       ></textarea>
       <button (click)="send()" [disabled]="loading() || !ready() || !promptModel.trim()">
-        {{ ready() ? 'Send →' : 'Waiting for agents…' }}
+        {{ ready() ? 'Research →' : 'Waiting for agents…' }}
       </button>
-      <button (click)="newConversation()" class="secondary">
+      <button (click)="newConversation()" class="secondary" [disabled]="loading()">
         New conversation
       </button>
     </div>
@@ -247,26 +249,64 @@ const COORDINATION_HI_MIN = 60;
         background: #E8DCC9;
         color: #2C2723;
       }
-      .human-est {
-        margin-top: 8px;
+      .badge.pill {
+        position: relative;
+        cursor: default;
+      }
+      .badge.pill .popup {
+        position: absolute;
+        top: calc(100% + 0.4rem);
+        left: 0;
+        min-width: 22rem;
+        max-width: 28rem;
+        background: #FFFFFF;
+        color: #2C2723;
+        border: 1px solid #E5E0DA;
+        border-radius: 6px;
+        padding: 0.75rem 0.9rem;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+        display: none;
+        z-index: 20;
         font-size: 0.85em;
+        line-height: 1.45;
       }
-      .human-est summary {
-        cursor: pointer;
-        color: #4A453F;
+      .badge.pill:hover .popup,
+      .badge.pill:focus-within .popup {
+        display: block;
       }
-      .human-est ul {
-        margin: 0.4em 0 0.5em 1.25em;
+      .badge.pill .popup h4 {
+        margin: 0 0 0.5em;
+        font-family: Georgia, serif;
+        font-size: 0.95rem;
+        color: #2C2723;
+      }
+      .badge.pill .popup ul {
+        list-style: none;
+        margin: 0;
         padding: 0;
       }
-      .human-est li {
-        margin: 0.15em 0;
-        line-height: 1.4;
+      .badge.pill .popup li {
+        padding: 0.4em 0;
+        border-top: 1px solid #F0EBE3;
       }
-      .human-est .disclaimer {
-        margin: 0.5em 0 0;
+      .badge.pill .popup li:first-child {
+        border-top: none;
+      }
+      .badge.pill .popup .time {
+        float: right;
+        color: #4A453F;
+        font-variant-numeric: tabular-nums;
+      }
+      .badge.pill .popup .desc {
+        color: #6B6560;
+        font-size: 0.85em;
+        margin-top: 0.15em;
+      }
+      .badge.pill .popup .disclaimer {
+        margin: 0.6em 0 0;
         color: #6B6560;
         font-style: italic;
+        font-size: 0.85em;
       }
       .trace-toggle {
         margin-top: 8px;
@@ -382,47 +422,34 @@ export class AgentsPageComponent {
   coordinationLo = COORDINATION_LO_MIN;
   coordinationHi = COORDINATION_HI_MIN;
 
-  humanBreakdown(trace: AgentRunResponse["trace"]): {
+  // The BANKING_INVESTIGATION_TEAM always runs the same four agents in
+  // sequence (see README §Select AI Agents). Estimates therefore don't
+  // need the trace — they're a property of the team, not of a specific
+  // run. This also keeps the badge visible when the backend returns a
+  // null trace.
+  humanBreakdown(): {
     label: string;
     description: string;
     loMin: number;
     hiMin: number;
   }[] {
-    if (!trace) return [];
-    const seen = new Set<string>();
-    const rows: ReturnType<AgentsPageComponent["humanBreakdown"]> = [];
-    for (const t of trace.tasks) {
-      const meta = HUMAN_TASK_META[t.agentName];
-      if (!meta || seen.has(t.agentName)) continue;
-      seen.add(t.agentName);
-      rows.push({
-        label: meta.label,
-        description: meta.description,
-        loMin: meta.loMin,
-        hiMin: meta.hiMin,
-      });
-    }
-    return rows;
+    return Object.values(HUMAN_TASK_META).map((meta) => ({
+      label: meta.label,
+      description: meta.description,
+      loMin: meta.loMin,
+      hiMin: meta.hiMin,
+    }));
   }
 
-  humanRange(trace: AgentRunResponse["trace"]): string {
-    if (!trace) return "";
-    let lo = COORDINATION_LO_MIN;
-    let hi = COORDINATION_HI_MIN;
-    const seen = new Set<string>();
-    for (const t of trace.tasks) {
-      if (seen.has(t.agentName)) continue;
-      seen.add(t.agentName);
-      const meta = HUMAN_TASK_META[t.agentName];
-      if (meta) {
-        lo += meta.loMin;
-        hi += meta.hiMin;
-      }
+  humanRange(): string {
+    const totals = Object.values(HUMAN_TASK_META).reduce(
+      (acc, meta) => ({ lo: acc.lo + meta.loMin, hi: acc.hi + meta.hiMin }),
+      { lo: COORDINATION_LO_MIN, hi: COORDINATION_HI_MIN },
+    );
+    if (totals.hi >= 90) {
+      return `${(totals.lo / 60).toFixed(1)}–${(totals.hi / 60).toFixed(1)} hours`;
     }
-    if (hi >= 90) {
-      return `${(lo / 60).toFixed(1)}–${(hi / 60).toFixed(1)} hours`;
-    }
-    return `${lo}–${hi} min`;
+    return `${totals.lo}–${totals.hi} min`;
   }
 
   // Minimal Markdown subset that the agents actually emit: bold, italics,
