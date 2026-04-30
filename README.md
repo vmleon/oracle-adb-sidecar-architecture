@@ -10,7 +10,11 @@ This repo is a working implementation of the stepping-stone pattern. Three Podma
 
 ## What stays. What's added.
 
-The whole point of the sidecar pattern is that the box on the left does not change to get the box on the right. The application keeps its existing connections to the production databases; the AI sidecar is bolted on alongside and reaches into the same data through DB_LINK views.
+The whole point of the sidecar pattern is that the box on top does not change to get the box at the bottom. The application keeps its existing connections to the production databases; the AI sidecar is bolted on alongside and reaches into the same data through DB_LINK views.
+
+This is a stepping-stone, not an end state. The sidecar buys you time: you can ship AI-powered features against your live data — fraud screening, natural-language analytics, agent-driven investigations — while the current system follows its own migration runway to 26ai on whatever timeline the rest of the business can absorb. No big-bang re-platform, no parallel rewrite, no application freeze. The architecture you already operate stays the architecture you operate.
+
+That timing matters. Fraud and intrusion attempts have gone AI-powered — synthetic identities at onboarding, deepfake voice on phone-banking lines, automated credential stuffing, and real-time transaction-pattern attacks tuned by adversaries who themselves have access to large language models. Defences have to be on the same generation of tooling. Waiting for a multi-year platform migration before you can layer on hybrid vector search, NL2SQL, or agent-driven investigations leaves a window in which the attackers have AI and the defenders don't. The sidecar closes that window now, on the data you already have, while the rest of the migration takes the time it needs to take.
 
 ```mermaid
 flowchart LR
