@@ -255,8 +255,8 @@ const COORDINATION_HI_MIN = 60;
       }
       .badge.pill .popup {
         position: absolute;
-        top: calc(100% + 0.4rem);
-        left: 0;
+        top: 0;
+        left: calc(100% + 0.4rem);
         min-width: 22rem;
         max-width: 28rem;
         background: #FFFFFF;
