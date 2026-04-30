@@ -144,29 +144,51 @@ public class AgentsService {
                 maxAttempts, teamName);
     }
 
-    // First-contact ORA-* codes that surface from RUN_TEAM during cold-start
-    // of the underlying GenAI worker / heterogeneous gateway and consistently
-    // succeed on a second attempt. Add to this list when new transients are
-    // observed in the field; do not catch arbitrary errors — a real failure
-    // (ORA-20051 task validation, ORA-00942 missing view) must not be retried.
+    // ORA-* codes that surface from RUN_TEAM when an underlying GenAI
+    // worker, heterogeneous gateway, or DB_LINK is cold or has dropped
+    // its session — all transient and recoverable on retry. Do NOT catch
+    // arbitrary errors: a real failure (ORA-20051 task validation,
+    // ORA-00942 missing view, ORA-01017 wrong password) must surface.
     private static final String[] RETRYABLE_ORA = {
             "ORA-28511", // lost RPC connection to heterogeneous remote agent
-            "ORA-01010", // invalid OCI operation (GenAI worker first-call flake)
+            "ORA-01010", // invalid OCI operation (gateway / GenAI flake)
+            "ORA-02063", // remote-side error reached via DB_LINK (gateway drop)
     };
 
+    // Exponential-ish backoff. Three attempts plus the initial call =
+    // four total. Total worst-case wait before final failure: 17 s.
+    private static final long[] RETRY_BACKOFF_MS = { 2000L, 5000L, 10000L };
+
     private String runTeamWithRetry(String prompt, String paramsJson) {
-        try {
-            return jdbc.queryForObject(RUN_TEAM_SQL, String.class, teamName, prompt, paramsJson);
-        } catch (RuntimeException e) {
-            String msg = e.getMessage() == null ? "" : e.getMessage();
-            String hit = null;
-            for (String code : RETRYABLE_ORA) {
-                if (msg.contains(code)) { hit = code; break; }
+        RuntimeException last = null;
+        for (int attempt = 0; attempt <= RETRY_BACKOFF_MS.length; attempt++) {
+            try {
+                return jdbc.queryForObject(RUN_TEAM_SQL, String.class, teamName, prompt, paramsJson);
+            } catch (RuntimeException e) {
+                String msg = e.getMessage() == null ? "" : e.getMessage();
+                String hit = null;
+                for (String code : RETRYABLE_ORA) {
+                    if (msg.contains(code)) { hit = code; break; }
+                }
+                if (hit == null) throw e;
+                last = e;
+                if (attempt < RETRY_BACKOFF_MS.length) {
+                    long delay = RETRY_BACKOFF_MS[attempt];
+                    log.warn("RUN_TEAM hit {} on attempt {} of {}. Retrying after {} ms.",
+                            hit, attempt + 1, RETRY_BACKOFF_MS.length + 1, delay);
+                    try {
+                        Thread.sleep(delay);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw e;
+                    }
+                } else {
+                    log.warn("RUN_TEAM hit {} on final attempt {}. Giving up.",
+                            hit, attempt + 1);
+                }
             }
-            if (hit == null) throw e;
-            log.warn("RUN_TEAM hit {} on first attempt. Retrying once.", hit);
-            return jdbc.queryForObject(RUN_TEAM_SQL, String.class, teamName, prompt, paramsJson);
         }
+        throw last;
     }
 
     private AgentTrace buildTrace(String execId) {
