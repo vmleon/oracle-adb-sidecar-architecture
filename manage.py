@@ -179,40 +179,6 @@ def setup():
     else:
         compartment_ocid = click.prompt("Compartment OCID")
 
-    ssh_dir = Path.home() / ".ssh"
-    ssh_keys = (
-        sorted(
-            f.name
-            for f in ssh_dir.iterdir()
-            if f.is_file() and not f.suffix and (f.with_suffix(".pub")).exists()
-        )
-        if ssh_dir.is_dir()
-        else []
-    )
-
-    if ssh_keys:
-        ssh_private_key_path = str(
-            ssh_dir
-            / inquirer.fuzzy(message="SSH private key:", choices=ssh_keys).execute()
-        )
-    else:
-        ssh_private_key_path = click.prompt("SSH private key path")
-    ssh_public_key_path = ssh_private_key_path + ".pub"
-    if Path(ssh_public_key_path).exists():
-        ssh_public_key = Path(ssh_public_key_path).read_text().strip()
-    else:
-        ssh_public_key = click.prompt("SSH public key (paste content)")
-
-    project_name = inquirer.text(
-        message="Project name (used for OCI resource naming):",
-        default="adbsidecar",
-    ).execute()
-
-    adb_admin_password = _generate_password()
-    oracle_db_password = _generate_password()
-    postgres_db_password = _generate_password()
-    mongo_db_password = _generate_password()
-
     console.print("\nOCI GenAI settings (used for Select AI Agents):")
 
     if regions:
@@ -247,6 +213,40 @@ def setup():
         genai_compartment_id = click.prompt(
             "GenAI compartment OCID", default=compartment_ocid
         )
+
+    ssh_dir = Path.home() / ".ssh"
+    ssh_keys = (
+        sorted(
+            f.name
+            for f in ssh_dir.iterdir()
+            if f.is_file() and not f.suffix and (f.with_suffix(".pub")).exists()
+        )
+        if ssh_dir.is_dir()
+        else []
+    )
+
+    if ssh_keys:
+        ssh_private_key_path = str(
+            ssh_dir
+            / inquirer.fuzzy(message="SSH private key:", choices=ssh_keys).execute()
+        )
+    else:
+        ssh_private_key_path = click.prompt("SSH private key path")
+    ssh_public_key_path = ssh_private_key_path + ".pub"
+    if Path(ssh_public_key_path).exists():
+        ssh_public_key = Path(ssh_public_key_path).read_text().strip()
+    else:
+        ssh_public_key = click.prompt("SSH public key (paste content)")
+
+    project_name = inquirer.text(
+        message="Project name (used for OCI resource naming):",
+        default="adbsidecar",
+    ).execute()
+
+    adb_admin_password = _generate_password()
+    oracle_db_password = _generate_password()
+    postgres_db_password = _generate_password()
+    mongo_db_password = _generate_password()
 
     console.print(
         Panel(
