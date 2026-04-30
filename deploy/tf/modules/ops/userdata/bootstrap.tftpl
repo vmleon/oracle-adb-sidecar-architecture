@@ -151,4 +151,4 @@ ANSIBLE_PYTHON_INTERPRETER="/usr/bin/python3" ansible-playbook \
 # `manage.py info` and ops humans can check for this sentinel as a
 # trustworthy proof that bootstrap finished cleanly.
 touch "$OK_SENTINEL"
-echo "Bootstrap complete: ${OK_SENTINEL}" | tee -a /home/opc/ansible-playbook.log
+echo "Bootstrap complete: $OK_SENTINEL" | tee -a /home/opc/ansible-playbook.log
