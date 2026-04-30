@@ -114,26 +114,7 @@ function countryName(code: string): string {
       </section>
 
       <section class="card">
-        <h3>3 · Decline velocity timeline</h3>
-        @if (d.declineEvents.length === 0) {
-          <p class="empty">No declined card authorisations in the current dataset.</p>
-        } @else {
-          <div class="chart-wrap">
-            <canvas baseChart [type]="'scatter'" [data]="declineData()" [options]="declineOpts()"></canvas>
-          </div>
-        }
-        <p class="footer">
-          Each point is a card authorisation; red points are declines. Three or
-          more declined authorisations on the same account inside a one-hour
-          window trip <code>R-FRAUD-007</code> ("Velocity-triggered freeze"), an
-          auto-freeze rule designed to stop card-testing fraud where a
-          compromised card number is probed across merchants and currencies
-          until one succeeds.
-        </p>
-      </section>
-
-      <section class="card">
-        <h3>4 · KYC pipeline</h3>
+        <h3>3 · KYC pipeline</h3>
         <div class="kyc-row">
           <div class="chart-wrap small">
             <canvas baseChart [type]="'doughnut'" [data]="kycData()" [options]="kycOpts"></canvas>
@@ -172,7 +153,7 @@ function countryName(code: string): string {
       </section>
 
       <section class="card">
-        <h3>5 · Risk tier × account status</h3>
+        <h3>4 · Risk tier × account status</h3>
         <div class="chart-wrap">
           <canvas baseChart [type]="'bar'" [data]="riskByStatusData()" [options]="riskByStatusOpts"></canvas>
         </div>
@@ -188,7 +169,7 @@ function countryName(code: string): string {
       </section>
 
       <section class="card">
-        <h3>6 · Tickets by priority over time</h3>
+        <h3>5 · Tickets by priority over time</h3>
         @if (d.ticketsByPriority.length === 0) {
           <p class="empty">No prioritised support tickets in the current dataset.</p>
         } @else {
@@ -207,7 +188,7 @@ function countryName(code: string): string {
       </section>
 
       <section class="card">
-        <h3>7 · Active rule violations</h3>
+        <h3>6 · Active rule violations</h3>
         <table class="data">
           <thead>
             <tr><th>Code</th><th>Severity</th><th>Rule</th><th>Policy</th><th class="num">Count</th></tr>
@@ -383,46 +364,7 @@ export class RiskPageComponent {
     plugins: { legend: { position: 'bottom' } },
   };
 
-  // Chart 3 — decline velocity scatter (x = time, y = customer)
-  declineData = computed<ChartData<'scatter'>>(() => {
-    const events = this.data()?.declineEvents ?? [];
-    const customers = Array.from(new Set(events.map((e) => e.customer)));
-    return {
-      labels: customers,
-      datasets: [{
-        label: 'Declined card auths',
-        data: events.map((e) => ({
-          x: new Date(e.occurredAt).getTime(),
-          y: customers.indexOf(e.customer),
-        })),
-        backgroundColor: 'rgba(199, 70, 52, 0.85)',
-        pointRadius: 6,
-      }],
-    };
-  });
-  declineOpts = computed<ChartConfiguration<'scatter'>['options']>(() => {
-    const customers = Array.from(new Set((this.data()?.declineEvents ?? []).map((e) => e.customer)));
-    return {
-      responsive: true,
-      maintainAspectRatio: false,
-      scales: {
-        x: { type: 'time', title: { display: true, text: 'When' } },
-        y: {
-          type: 'linear',
-          min: -0.5,
-          max: Math.max(0.5, customers.length - 0.5),
-          ticks: {
-            stepSize: 1,
-            callback: (v) => customers[v as number] ?? '',
-          },
-          title: { display: true, text: 'Customer' },
-        },
-      },
-      plugins: { legend: { display: false } },
-    };
-  });
-
-  // Chart 4 — KYC donut
+  // Chart 3 — KYC donut
   kycData = computed<ChartData<'doughnut'>>(() => {
     const counts = this.data()?.kycPipeline.counts ?? [];
     const palette: Record<string, string> = {
@@ -442,7 +384,7 @@ export class RiskPageComponent {
     plugins: { legend: { position: 'bottom' } },
   };
 
-  // Chart 5 — risk tier × account status (stacked bar)
+  // Chart 4 — risk tier × account status (stacked bar)
   riskByStatusData = computed<ChartData<'bar'>>(() => {
     const rows = this.data()?.riskByStatus ?? [];
     const tiers = ['LOW', 'MEDIUM', 'HIGH'];
@@ -471,7 +413,7 @@ export class RiskPageComponent {
     plugins: { legend: { position: 'bottom' } },
   };
 
-  // Chart 6 — tickets by priority over time (stacked bar)
+  // Chart 5 — tickets by priority over time (stacked bar)
   ticketsData = computed<ChartData<'bar'>>(() => {
     const rows = this.data()?.ticketsByPriority ?? [];
     const dates = Array.from(new Set(rows.map((r) => r.date))).sort();

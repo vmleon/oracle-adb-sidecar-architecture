@@ -25,16 +25,6 @@ export interface CrossBorderRow {
   totalAmount: number;
 }
 
-export interface DeclineEvent {
-  customer: string;
-  accountId: number;
-  amount: number;
-  currency: string;
-  merchant: string | null;
-  country: string | null;
-  occurredAt: string;
-}
-
 export interface KycPipeline {
   counts: { status: string; count: number }[];
   nonVerified: {
@@ -72,7 +62,6 @@ export interface RiskDashboard {
   kpis: RiskKpis;
   subCtrWatchlist: SubCtrRow[];
   crossBorderWires: CrossBorderRow[];
-  declineEvents: DeclineEvent[];
   kycPipeline: KycPipeline;
   riskByStatus: RiskByStatusRow[];
   ticketsByPriority: TicketBucket[];

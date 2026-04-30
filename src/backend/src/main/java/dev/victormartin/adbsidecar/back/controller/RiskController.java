@@ -73,22 +73,6 @@ public class RiskController {
             ORDER BY SUM(ABS(t.amount)) DESC
             """;
 
-    private static final String CHART_DECLINE_EVENTS = """
-            SELECT c.name              AS "customer",
-                   a.id                AS "accountId",
-                   t.amount            AS "amount",
-                   t.currency          AS "currency",
-                   t.merchant          AS "merchant",
-                   t.merchant_country  AS "country",
-                   TO_CHAR(t.occurred_at AT TIME ZONE 'UTC',
-                           'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "occurredAt"
-            FROM transactions t
-            JOIN accounts  a ON a.id = t.account_id
-            JOIN customers c ON c.id = a.customer_id
-            WHERE t.status = 'DECLINED'
-            ORDER BY t.occurred_at
-            """;
-
     private static final String CHART_KYC_BUCKETS =
             "SELECT kyc_status AS \"status\", COUNT(*) AS \"count\" "
             + "FROM customers GROUP BY kyc_status ORDER BY kyc_status";
@@ -216,7 +200,6 @@ public class RiskController {
         body.put("kpis", kpis);
         body.put("subCtrWatchlist", oracleJdbc.queryForList(CHART_SUB_CTR_WATCHLIST));
         body.put("crossBorderWires", oracleJdbc.queryForList(CHART_CROSS_BORDER_WIRES));
-        body.put("declineEvents", oracleJdbc.queryForList(CHART_DECLINE_EVENTS));
         body.put("kycPipeline", kycPipeline);
         body.put("riskByStatus", oracleJdbc.queryForList(CHART_RISK_BY_STATUS));
         body.put("ticketsByPriority", ticketsByPriority());
