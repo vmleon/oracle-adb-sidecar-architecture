@@ -54,19 +54,7 @@ public class ReadinessService {
             Integer n = adbJdbc.queryForObject(
                     "SELECT COUNT(*) FROM USER_AI_AGENT_TEAMS WHERE AGENT_TEAM_NAME = ? AND STATUS = 'ENABLED'",
                     Integer.class, teamName);
-            if (n == null || n <= 0) return false;
-            // Warm both heterogeneous-gateway sessions on every poll.
-            // Observed: an idle PG_LINK drops, and the next RUN_TEAM call
-            // fails on TASK_0 (Transaction Analyst) with
-            //   ORA-01010 / ORA-02063 from PG_LINK
-            // even though that agent only reads Oracle Free views — the
-            // task framework enumerates metadata across every DB_LINK
-            // during warm-up. Touching one Oracle-backed and one
-            // Postgres-backed V_BNK_* view here keeps both gateways alive
-            // and turns the dot red the moment a link genuinely dies.
-            adbJdbc.queryForObject("SELECT COUNT(*) FROM v_bnk_customers", Integer.class);
-            adbJdbc.queryForObject("SELECT COUNT(*) FROM v_bnk_policies",  Integer.class);
-            return true;
+            return n != null && n > 0;
         }));
         // Rich banking schema check — /api/v1/risk needs customers (Oracle 003)
         // and rules.code (Postgres 003-compliance-rich) to be present.

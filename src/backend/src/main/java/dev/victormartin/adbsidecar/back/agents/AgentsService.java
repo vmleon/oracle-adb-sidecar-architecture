@@ -23,13 +23,15 @@ public class AgentsService {
     private static final String RUN_TEAM_SQL =
             "SELECT DBMS_CLOUD_AI_AGENT.RUN_TEAM(?, ?, ?) FROM DUAL";
 
-    // NOTE: Oracle typo on the catalog column name — COVERSATION_PARAM (sic).
-    // Do not "fix" — the catalog itself spells it that way.
+    // Conversation context column on USER_AI_AGENT_TASK_HISTORY. On the
+    // 23.26 build it is CONVERSATION_PARAMS (per docs). Older builds
+    // shipped the typo COVERSATION_PARAM; if you re-target an older
+    // build, flip this and PROMPT_HISTORY_SQL below.
     private static final String RESOLVE_EXEC_ID_SQL = """
             SELECT TEAM_EXEC_ID FROM (
                 SELECT DISTINCT TEAM_EXEC_ID, START_DATE
                 FROM USER_AI_AGENT_TASK_HISTORY
-                WHERE JSON_VALUE(COVERSATION_PARAM, '$.conversation_id') = ?
+                WHERE JSON_VALUE(CONVERSATION_PARAMS, '$.conversation_id') = ?
                 ORDER BY START_DATE DESC
             ) WHERE ROWNUM = 1
             """;
@@ -59,6 +61,41 @@ public class AgentsService {
             ORDER BY TASK_ORDER, START_DATE
             """;
 
+    // The actual LLM prompt + response pairs for a conversation. Joined
+    // via the conversation_id stored in CONVERSATION_PARAMS.
+    private static final String PROMPT_HISTORY_SQL = """
+            SELECT t.TASK_NAME, p.PROMPT, p.PROMPT_RESPONSE,
+                   TO_CHAR(p.CREATED, 'YYYY-MM-DD"T"HH24:MI:SS.FF3"Z"') AS CREATED
+            FROM USER_CLOUD_AI_CONVERSATION_PROMPTS p
+            LEFT JOIN USER_AI_AGENT_TASK_HISTORY t
+                   ON JSON_VALUE(t.CONVERSATION_PARAMS, '$.conversation_id') = p.CONVERSATION_ID
+                  AND t.TEAM_EXEC_ID = ?
+            WHERE p.CONVERSATION_ID = ?
+            ORDER BY p.CREATED
+            """;
+
+    // Per-task scheduler additional_info (the only place that holds the
+    // actual ORA-* on failure — the agent history views drop the message).
+    private static final String SCHEDULER_INFO_FOR_TASK_SQL = """
+            SELECT additional_info
+            FROM   user_scheduler_job_run_details
+            WHERE  job_name = ?
+            ORDER  BY log_date DESC
+            FETCH  FIRST 1 ROWS ONLY
+            """;
+
+    // Latest non-success scheduler-job error for any task in this team.
+    // Used to enrich exception messages bubbled from RUN_TEAM.
+    private static final String LATEST_TEAM_ERROR_SQL = """
+            SELECT additional_info
+            FROM   user_scheduler_job_run_details
+            WHERE  job_name LIKE ? || '_TASK_%'
+              AND  status <> 'SUCCEEDED'
+              AND  log_date > SYSTIMESTAMP - INTERVAL '5' MINUTE
+            ORDER  BY log_date DESC
+            FETCH  FIRST 1 ROWS ONLY
+            """;
+
     private static final String TEAM_EXISTS_SQL =
             "SELECT COUNT(*) FROM USER_AI_AGENT_TEAMS WHERE AGENT_TEAM_NAME = ? AND STATUS = 'ENABLED'";
 
@@ -86,15 +123,29 @@ public class AgentsService {
         String paramsJson = "{\"conversation_id\":\"" + conversationId + "\"}";
 
         long t0 = System.currentTimeMillis();
-        String answer = runTeamWithRetry(prompt, paramsJson);
+        String answer;
+        try {
+            answer = jdbc.queryForObject(RUN_TEAM_SQL, String.class, teamName, prompt, paramsJson);
+        } catch (RuntimeException e) {
+            long failedMs = System.currentTimeMillis() - t0;
+            String schedulerInfo = fetchLatestTeamSchedulerError();
+            log.error("event=run_team_failed conv={} team={} elapsed_ms={} ora=\"{}\" scheduler_additional_info=\"{}\"",
+                    conversationId, teamName, failedMs,
+                    abbrev(e.getMessage(), 240), abbrev(schedulerInfo, 240));
+            String enriched = (e.getMessage() == null ? "RUN_TEAM failed" : e.getMessage())
+                    + (schedulerInfo == null ? ""
+                       : " | scheduler additional_info: " + schedulerInfo);
+            throw new RuntimeException(enriched, e);
+        }
         long elapsed = System.currentTimeMillis() - t0;
-        log.info("RUN_TEAM completed in {}ms (conversation={}, team={})", elapsed, conversationId, teamName);
+        log.info("event=run_team_done conv={} team={} elapsed_ms={} answer_chars={}",
+                conversationId, teamName, elapsed, answer == null ? 0 : answer.length());
 
         AgentTrace trace = null;
         try {
             String execId = jdbc.queryForObject(RESOLVE_EXEC_ID_SQL, String.class, conversationId);
             if (execId != null) {
-                trace = buildTrace(execId);
+                trace = buildTrace(execId, conversationId);
             }
         } catch (Exception e) {
             log.warn("Trace assembly failed for conversation {}: {}", conversationId, e.getMessage());
@@ -104,11 +155,11 @@ public class AgentsService {
     }
 
     // Fire one throwaway RUN_TEAM call after the backend is up so the GenAI
-    // workers and heterogeneous gateways are warm before the first real user
-    // request. Polls in a background thread until the team is ENABLED — the
-    // backend can boot before Liquibase has finished creating the team — then
-    // runs once. Failures are logged and dropped: if warm-up never completes,
-    // user requests still work, they just pay the cold-start cost themselves.
+    // workers are warm before the first real user request. Polls in a
+    // background thread until the team is ENABLED — the backend can boot
+    // before Liquibase has finished creating the team — then runs once.
+    // Failures are logged and dropped: if warm-up never completes, user
+    // requests still work, they just pay the cold-start cost themselves.
     @EventListener(ApplicationReadyEvent.class)
     public void scheduleWarmUp() {
         if (!warmUpEnabled) {
@@ -128,7 +179,7 @@ public class AgentsService {
                     log.info("Warming up agents team {}...", teamName);
                     long t0 = System.currentTimeMillis();
                     String params = "{\"conversation_id\":\"_warmup_" + UUID.randomUUID() + "\"}";
-                    runTeamWithRetry("warm-up ping; reply with OK.", params);
+                    jdbc.queryForObject(RUN_TEAM_SQL, String.class, teamName, "warm-up ping; reply with OK.", params);
                     log.info("Agents warm-up complete in {}ms", System.currentTimeMillis() - t0);
                     return;
                 }
@@ -144,63 +195,34 @@ public class AgentsService {
                 maxAttempts, teamName);
     }
 
-    // ORA-* codes that surface from RUN_TEAM when an underlying GenAI
-    // worker, heterogeneous gateway, or DB_LINK is cold or has dropped
-    // its session — all transient and recoverable on retry. Do NOT catch
-    // arbitrary errors: a real failure (ORA-20051 task validation,
-    // ORA-00942 missing view, ORA-01017 wrong password) must surface.
-    private static final String[] RETRYABLE_ORA = {
-            "ORA-28511", // lost RPC connection to heterogeneous remote agent
-            "ORA-01010", // invalid OCI operation (gateway / GenAI flake)
-            "ORA-02063", // remote-side error reached via DB_LINK (gateway drop)
-    };
-
-    // Exponential-ish backoff. Three attempts plus the initial call =
-    // four total. Total worst-case wait before final failure: 17 s.
-    private static final long[] RETRY_BACKOFF_MS = { 2000L, 5000L, 10000L };
-
-    private String runTeamWithRetry(String prompt, String paramsJson) {
-        RuntimeException last = null;
-        for (int attempt = 0; attempt <= RETRY_BACKOFF_MS.length; attempt++) {
-            try {
-                return jdbc.queryForObject(RUN_TEAM_SQL, String.class, teamName, prompt, paramsJson);
-            } catch (RuntimeException e) {
-                String msg = e.getMessage() == null ? "" : e.getMessage();
-                String hit = null;
-                for (String code : RETRYABLE_ORA) {
-                    if (msg.contains(code)) { hit = code; break; }
-                }
-                if (hit == null) throw e;
-                last = e;
-                if (attempt < RETRY_BACKOFF_MS.length) {
-                    long delay = RETRY_BACKOFF_MS[attempt];
-                    log.warn("RUN_TEAM hit {} on attempt {} of {}. Retrying after {} ms.",
-                            hit, attempt + 1, RETRY_BACKOFF_MS.length + 1, delay);
-                    try {
-                        Thread.sleep(delay);
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        throw e;
-                    }
-                } else {
-                    log.warn("RUN_TEAM hit {} on final attempt {}. Giving up.",
-                            hit, attempt + 1);
-                }
-            }
+    public AgentTrace traceForConversation(String conversationId) {
+        String execId;
+        try {
+            execId = jdbc.queryForObject(RESOLVE_EXEC_ID_SQL, String.class, conversationId);
+        } catch (RuntimeException e) {
+            return null;
         }
-        throw last;
+        return execId == null ? null : buildTrace(execId, conversationId);
     }
 
-    private AgentTrace buildTrace(String execId) {
+    private AgentTrace buildTrace(String execId, String conversationId) {
         Map<String, Object> team = jdbc.queryForMap(TEAM_HISTORY_SQL, execId);
-        List<AgentTrace.TaskTrace> tasks = jdbc.query(TASK_HISTORY_SQL, (rs, n) -> new AgentTrace.TaskTrace(
-                rs.getString("AGENT_NAME"),
-                rs.getString("TASK_NAME"),
-                rs.getInt("TASK_ORDER"),
-                rs.getString("INPUT"),
-                rs.getString("RESULT"),
-                rs.getString("STATE"),
-                rs.getLong("DURATION_MS")), execId);
+        List<AgentTrace.TaskTrace> tasks = jdbc.query(TASK_HISTORY_SQL, (rs, n) -> {
+            String state = rs.getString("STATE");
+            String taskName = rs.getString("TASK_NAME");
+            String additional = "FAILED".equalsIgnoreCase(state)
+                    ? fetchSchedulerAdditionalInfo(teamName + "_" + taskName)
+                    : null;
+            return new AgentTrace.TaskTrace(
+                    rs.getString("AGENT_NAME"),
+                    taskName,
+                    rs.getInt("TASK_ORDER"),
+                    rs.getString("INPUT"),
+                    rs.getString("RESULT"),
+                    state,
+                    rs.getLong("DURATION_MS"),
+                    additional);
+        }, execId);
         List<AgentTrace.ToolTrace> tools = jdbc.query(TOOL_HISTORY_SQL, (rs, n) -> new AgentTrace.ToolTrace(
                 rs.getString("AGENT_NAME"),
                 rs.getString("TOOL_NAME"),
@@ -210,6 +232,49 @@ public class AgentsService {
                 rs.getString("OUTPUT"),
                 rs.getString("TOOL_OUTPUT"),
                 rs.getLong("DURATION_MS")), execId);
-        return new AgentTrace(execId, (String) team.get("TEAM_NAME"), (String) team.get("STATE"), tasks, tools);
+        List<AgentTrace.PromptTrace> prompts = fetchPrompts(execId, conversationId);
+        return new AgentTrace(execId, (String) team.get("TEAM_NAME"), (String) team.get("STATE"),
+                tasks, tools, prompts);
+    }
+
+    private List<AgentTrace.PromptTrace> fetchPrompts(String execId, String conversationId) {
+        try {
+            return jdbc.query(PROMPT_HISTORY_SQL, (rs, n) -> new AgentTrace.PromptTrace(
+                    rs.getString("TASK_NAME"),
+                    rs.getString("PROMPT"),
+                    rs.getString("PROMPT_RESPONSE"),
+                    rs.getString("CREATED")), execId, conversationId);
+        } catch (RuntimeException e) {
+            // USER_CLOUD_AI_CONVERSATION_PROMPTS may not exist on every ADB
+            // build. Don't break the trace if it isn't there.
+            log.debug("Prompt history unavailable for conversation {}: {}", conversationId, e.getMessage());
+            return List.of();
+        }
+    }
+
+    private String fetchSchedulerAdditionalInfo(String jobName) {
+        try {
+            List<String> rows = jdbc.queryForList(SCHEDULER_INFO_FOR_TASK_SQL, String.class, jobName);
+            return rows.isEmpty() ? null : rows.get(0);
+        } catch (RuntimeException e) {
+            log.debug("Scheduler info lookup failed for job {}: {}", jobName, e.getMessage());
+            return null;
+        }
+    }
+
+    private String fetchLatestTeamSchedulerError() {
+        try {
+            List<String> rows = jdbc.queryForList(LATEST_TEAM_ERROR_SQL, String.class, teamName);
+            return rows.isEmpty() ? null : rows.get(0);
+        } catch (RuntimeException e) {
+            log.debug("Latest team scheduler error lookup failed: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private static String abbrev(String s, int max) {
+        if (s == null) return "";
+        String oneLine = s.replace('\n', ' ').replace('\r', ' ');
+        return oneLine.length() <= max ? oneLine : oneLine.substring(0, max) + "...";
     }
 }

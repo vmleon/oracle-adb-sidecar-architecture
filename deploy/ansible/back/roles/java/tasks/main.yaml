@@ -12,6 +12,14 @@
     group: opc
     mode: '0744'
 
+- name: Create back log directory (Spring Boot logging.file.name target)
+  ansible.builtin.file:
+    path: "{{ back_dest_directory }}/logs"
+    state: directory
+    owner: opc
+    group: opc
+    mode: '0755'
+
 - name: Copy jar file
   ansible.builtin.copy:
     src: "files/{{ back_jar_file }}"

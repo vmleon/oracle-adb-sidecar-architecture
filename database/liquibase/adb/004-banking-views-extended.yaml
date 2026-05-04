@@ -61,43 +61,9 @@ databaseChangeLog:
       rollback:
         - sql: { sql: DROP VIEW V_BNK_TRANSACTIONS }
 
-  # ----- Postgres side (PG_LINK exists; "public" quoting per 002 workaround) -----
-  - changeSet:
-      id: adb-004-view-bnk-policies
-      author: adbsidecar
-      changes:
-        - sql:
-            endDelimiter: "/"
-            splitStatements: false
-            sql: |
-              CREATE OR REPLACE VIEW V_BNK_POLICIES AS
-              SELECT "id" AS id, "code" AS code, "name" AS name, "description" AS description,
-                     "category" AS category, "effective_at" AS effective_at
-              FROM "public"."policies"@PG_LINK
-              /
-      rollback:
-        - sql: { sql: DROP VIEW V_BNK_POLICIES }
-
-  - changeSet:
-      id: adb-004-view-bnk-rules
-      author: adbsidecar
-      changes:
-        - sql:
-            endDelimiter: "/"
-            splitStatements: false
-            sql: |
-              CREATE OR REPLACE VIEW V_BNK_RULES AS
-              SELECT "id" AS id, "code" AS code, "name" AS name, "description" AS description,
-                     "policy_id" AS policy_id, "policy_code" AS policy_code,
-                     "expression" AS expression,
-                     "threshold_amount" AS threshold_amount,
-                     "threshold_count" AS threshold_count,
-                     "threshold_window" AS threshold_window,
-                     "severity" AS severity
-              FROM "public"."rules"@PG_LINK
-              /
-      rollback:
-        - sql: { sql: DROP VIEW V_BNK_RULES }
+  # ----- Postgres side — INTENTIONALLY OMITTED -----
+  # V_BNK_POLICIES and V_BNK_RULES are not provisioned because PG_LINK
+  # is not deployed. See docs/ISSUE_AI_AGENT_RUN_TEAM_PG_LINK_WEDGE.md.
 
   # ----- MongoDB side — DEFERRED -----
   # Uncomment the changeset below once

@@ -195,19 +195,23 @@
 
 # SQLcl on this build ships with a broken JLine (missing jansi/jna natives)
 # that crashes whenever stdin isn't a real TTY. `script -q /dev/null -c ...`
-# wraps the command in a pseudo-TTY so JLine initializes cleanly. Combined
-# with WHENEVER SQLERROR EXIT SQL.SQLCODE in the script above, SQLcl now
-# propagates ORA-* errors as a non-zero rc.
+# wraps the command in a pseudo-TTY so JLine initializes cleanly.
+#
+# Important: `script` exits 0 whenever it could RUN the inner command, even
+# if SQLcl printed Connection Failed / ORA-12514. And SQLcl's WHENEVER
+# SQLERROR does not fire on `conn` failures (it only catches SQL errors,
+# not connect-time errors). So `rc == 0` is a useless success signal here
+# — we have to inspect stdout for ORA-* and decide retry vs. fail there.
 #
 # Retry policy is deliberately auth-aware. Oracle's DEFAULT profile locks
 # an account after 10 failed login attempts, so we cannot blindly retry.
-# - On ORA-01017 (bad password) or ORA-28000 (account already locked) we
-#   stop retrying immediately and let the playbook fail. One credentialed
-#   attempt is enough; a second would needlessly increment the lock count.
-# - On transient errors (ORA-12523 / 12526 / 12528 / 01033 — PDB still
-#   opening or service not yet registered with the listener) we keep
-#   polling. These don't increment FAILED_LOGIN_ATTEMPTS because they
-#   fire before authentication.
+# - Transient errors (ORA-12514 / 12523 / 12526 / 12528 / 01033 — listener
+#   up but PDB still opening, or service not yet registered) keep polling.
+#   These all fire before authentication, so they don't increment
+#   FAILED_LOGIN_ATTEMPTS.
+# - ORA-01017 (bad password) or ORA-28000 (account already locked) stop
+#   retrying immediately. One credentialed attempt is enough; a second
+#   would needlessly increment the lock count.
 # 60 retries × 10 s = 10 min budget for the PDB to come up.
 - name: Register SQLcl saved connections (adb, orafree)
   ansible.builtin.command: script -q /dev/null -c "sql /nolog @/home/opc/conn.sql"
@@ -216,7 +220,7 @@
   retries: 60
   delay: 10
   until: >
-    sqlcl_conn_result.rc == 0
+    'ORA-' not in sqlcl_conn_result.stdout
     or 'ORA-01017' in sqlcl_conn_result.stdout
     or 'ORA-28000' in sqlcl_conn_result.stdout
   changed_when: "'Saved' in sqlcl_conn_result.stdout or 'saved' in sqlcl_conn_result.stdout"

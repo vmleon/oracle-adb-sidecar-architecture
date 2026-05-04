@@ -29,3 +29,16 @@ datasources:
 selectai:
   agents:
     team: BANKING_INVESTIGATION_TEAM
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,logfile,loggers,metrics,scheduledtasks
+  endpoint:
+    logfile:
+      enabled: true
+logging:
+  file:
+    name: logs/app.log
+  pattern:
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n"

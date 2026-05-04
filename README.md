@@ -250,7 +250,7 @@ End-to-end provisioning, prerequisites, and cleanup live in **[DEPLOY.md](DEPLOY
 - [DEPLOY.md](DEPLOY.md) — provisioning prerequisites, the `manage.py` flow, and cleanup.
 - [docs/FEDERATED_QUERIES.md](docs/FEDERATED_QUERIES.md) — the deep dive on how ADB reaches Oracle Free / Postgres / Mongo through `DBMS_CLOUD_ADMIN.CREATE_DATABASE_LINK`, with the two hard requirements (DNS-resolvable hostname, Mongo data outside `admin`) and the `ORA-17008` mid-run recovery path.
 - [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) — day-two playbook for each tier (ops, databases, back, front) plus how to poke at each database from the ops bastion.
-- [docs/ISSUE_DB_LINK_GATEWAY_IDLE_TIMEOUT.md](docs/ISSUE_DB_LINK_GATEWAY_IDLE_TIMEOUT.md) — the heterogeneous-gateway idle drop that breaks `RUN_TEAM`, and the layered keep-warm fix.
+- [docs/ISSUE_AI_AGENT_RUN_TEAM_PG_LINK_WEDGE.md](docs/ISSUE_AI_AGENT_RUN_TEAM_PG_LINK_WEDGE.md) — the two `PG_LINK` heterogeneous-gateway failure modes (5-minute idle drop and the durable AI-agent enumeration wedge), and why `PG_LINK` is not deployed in this repo.
 - [docs/ISSUE_ADB_HETEROGENEOUS_MONGODB_OBJECT_NOT_FOUND.md](docs/ISSUE_ADB_HETEROGENEOUS_MONGODB_OBJECT_NOT_FOUND.md) — known issue: the third heterogeneous engine (Mongo via `MONGO_LINK`) is unusable due to a DataDirect ODBC bug.
 - [NOTES.md](NOTES.md) — what's intentionally deferred and the iteration roadmap.
 
