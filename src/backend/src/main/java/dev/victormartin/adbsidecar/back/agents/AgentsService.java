@@ -8,7 +8,9 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
+import org.springframework.core.NestedExceptionUtils;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -100,8 +102,15 @@ public class AgentsService {
             "SELECT COUNT(*) FROM USER_AI_AGENT_TEAMS WHERE AGENT_TEAM_NAME = ? AND STATUS = 'ENABLED'";
 
     private final JdbcTemplate jdbc;
+    // Separate template with a 120 s query timeout for warm-up + keep-warm
+    // RUN_TEAM calls. Without this, a single hung RUN_TEAM blocks Spring's
+    // single-threaded scheduler indefinitely (fixedDelay only fires after
+    // the previous returns), the gateway HS_IDLE_TIMEOUT fires at 5 min,
+    // and the wedge becomes inevitable on the next user request.
+    private final JdbcTemplate keepWarmJdbc;
     private final String teamName;
     private final boolean warmUpEnabled;
+    private final boolean keepWarmEnabled;
     private final Executor warmUpExecutor = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "agents-warmup");
         t.setDaemon(true);
@@ -110,10 +119,14 @@ public class AgentsService {
 
     public AgentsService(@Qualifier("adbJdbc") JdbcTemplate jdbc,
                          @Value("${selectai.agents.team:BANKING_INVESTIGATION_TEAM}") String teamName,
-                         @Value("${selectai.agents.warmup.enabled:true}") boolean warmUpEnabled) {
+                         @Value("${selectai.agents.warmup.enabled:true}") boolean warmUpEnabled,
+                         @Value("${selectai.agents.keepwarm.enabled:true}") boolean keepWarmEnabled) {
         this.jdbc = jdbc;
+        this.keepWarmJdbc = new JdbcTemplate(jdbc.getDataSource());
+        this.keepWarmJdbc.setQueryTimeout(120);
         this.teamName = teamName;
         this.warmUpEnabled = warmUpEnabled;
+        this.keepWarmEnabled = keepWarmEnabled;
     }
 
     public AgentRunResponse runTeam(String prompt, String conversationIdOrNull) {
@@ -178,8 +191,10 @@ public class AgentsService {
                 if (count != null && count > 0) {
                     log.info("Warming up agents team {}...", teamName);
                     long t0 = System.currentTimeMillis();
-                    String params = "{\"conversation_id\":\"_warmup_" + UUID.randomUUID() + "\"}";
-                    jdbc.queryForObject(RUN_TEAM_SQL, String.class, teamName, "warm-up ping; reply with OK.", params);
+                    // Bare UUID — a prefixed conversation_id makes RUN_TEAM bubble "bad SQL grammar".
+                    String conv = UUID.randomUUID().toString();
+                    String params = "{\"conversation_id\":\"" + conv + "\"}";
+                    keepWarmJdbc.queryForObject(RUN_TEAM_SQL, String.class, teamName, "warm-up ping; reply with OK.", params);
                     log.info("Agents warm-up complete in {}ms", System.currentTimeMillis() - t0);
                     return;
                 }
@@ -193,6 +208,32 @@ public class AgentsService {
         }
         log.warn("Agents warm-up gave up after {} attempts; team {} never reported ENABLED",
                 maxAttempts, teamName);
+    }
+
+    // PG_LINK-via-heterogeneous-gateway connections cached in DBMS_SCHEDULER
+    // worker sessions die after HS_IDLE_TIMEOUT (~5 min) and the next TASK_0
+    // wedges with ORA-01010 / ORA-02063 from PG_LINK until the worker is
+    // reaped (~10 min). Continuous traffic on the agent path prevents the
+    // wedge — see docs/ISSUE_AI_AGENT_RUN_TEAM_PG_LINK_WEDGE.md. fixedDelay
+    // (not fixedRate) so a slow RUN_TEAM never overlaps with the next tick.
+    @Scheduled(
+            fixedDelayString = "${selectai.agents.keepwarm.interval-ms:60000}",
+            initialDelayString = "${selectai.agents.keepwarm.initial-delay-ms:90000}")
+    public void keepWarm() {
+        if (!keepWarmEnabled) return;
+        try {
+            Integer count = jdbc.queryForObject(TEAM_EXISTS_SQL, Integer.class, teamName);
+            if (count == null || count == 0) return;
+            long t0 = System.currentTimeMillis();
+            // Bare UUID — a prefixed conversation_id makes RUN_TEAM bubble "bad SQL grammar".
+            String conv = UUID.randomUUID().toString();
+            String params = "{\"conversation_id\":\"" + conv + "\"}";
+            keepWarmJdbc.queryForObject(RUN_TEAM_SQL, String.class, teamName, "keep-warm; reply with OK.", params);
+            log.debug("event=keepwarm_ok team={} conv={} elapsed_ms={}", teamName, conv, System.currentTimeMillis() - t0);
+        } catch (Exception e) {
+            Throwable root = NestedExceptionUtils.getMostSpecificCause(e);
+            log.warn("event=keepwarm_failed team={} cause=\"{}\"", teamName, abbrev(root.getMessage(), 240));
+        }
     }
 
     public AgentTrace traceForConversation(String conversationId) {

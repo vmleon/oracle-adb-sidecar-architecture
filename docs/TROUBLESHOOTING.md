@@ -204,6 +204,46 @@ sudo bash /var/lib/cloud/instance/scripts/part-001 \
     2>&1 | sudo tee /var/log/bootstrap-rerun.log
 ```
 
+## AI agent path health
+
+`RUN_TEAM` (the `/api/v1/agents` endpoint) runs in a `DBMS_SCHEDULER`
+worker session that caches its own `PG_LINK` gateway connection. That
+connection dies after `HS_IDLE_TIMEOUT = 5 min`; without continuous
+traffic on the agent path, the worker's cached handle goes stale and
+the next `RUN_TEAM` fast-fails on `TASK_0` with `ORA-01010 / ORA-02063
+from PG_LINK`. The backend ships an always-on keep-warm
+(`AgentsService.keepWarm()`, every 60 s) that prevents this.
+
+Quick health probes (run from your laptop against the public LB, or
+from ops against `$BACK:8080`):
+
+```bash
+F=<front_ip from python manage.py info>
+
+# Agent end-to-end (expect ok=true; elapsed 30-70s normal, 70-150s on cold reconnect)
+curl -sS --max-time 120 http://$F/api/v1/diag/agents/sanity | jq .
+
+# Recent scheduler-side failures (expect [] when keep-warm is doing its job)
+curl -sS http://$F/api/v1/diag/agents/scheduler-failures?sinceMinutes=15 | jq .
+
+# Confirm keep-warm is firing in the back log
+curl -sS -H 'Range: bytes=-50000' http://$F/actuator/logfile | grep -E "keepwarm_(ok|failed)" | tail -10
+```
+
+If sanity fast-fails (~300-450 ms, `ORA-02063 from PG_LINK`), the
+keep-warm has stopped or never started. Check:
+
+- `curl http://$F/actuator/scheduledtasks` — should list
+  `keepWarm` with `fixedDelay=60000`.
+- back log for `event=keepwarm_failed` — recent entries indicate why.
+- `selectai.agents.keepwarm.enabled` in `/home/opc/back/config/application.yaml`
+  on the back host — must be `true`.
+
+Recovery if a wedge has already fired: ~10 min of idle clears it (the
+scheduler reaps the poisoned worker). Drop+recreate of the link or
+team does NOT recover. Full diagnosis in
+[`ISSUE_AI_AGENT_RUN_TEAM_PG_LINK_WEDGE.md`](./ISSUE_AI_AGENT_RUN_TEAM_PG_LINK_WEDGE.md).
+
 ## Federated query sanity SQL
 
 If `route=direct` works but `route=federated` doesn't, connect to ADB

@@ -29,6 +29,10 @@ datasources:
 selectai:
   agents:
     team: BANKING_INVESTIGATION_TEAM
+    keepwarm:
+      enabled: true
+      interval-ms: 60000
+      initial-delay-ms: 90000
 management:
   endpoints:
     web:

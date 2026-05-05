@@ -70,10 +70,33 @@ databaseChangeLog:
               END;
               /
 
-  # BANKING_NL2SQL_COMPLIANCE profile is intentionally NOT created.
-  # Its object_list referenced V_BNK_POLICIES + V_BNK_RULES, both of
-  # which resolve through PG_LINK. PG_LINK is not deployed — see
-  # docs/ISSUE_AI_AGENT_RUN_TEAM_PG_LINK_WEDGE.md.
+  - changeSet:
+      id: adb-005-profile-compliance
+      author: adbsidecar
+      runOnChange: true
+      changes:
+        - sql:
+            endDelimiter: "/"
+            splitStatements: false
+            sql: |
+              BEGIN
+                BEGIN DBMS_CLOUD_AI.DROP_PROFILE(profile_name => 'BANKING_NL2SQL_COMPLIANCE', force => true); EXCEPTION WHEN OTHERS THEN NULL; END;
+                DBMS_CLOUD_AI.CREATE_PROFILE(
+                  profile_name => 'BANKING_NL2SQL_COMPLIANCE',
+                  attributes   =>
+                  '{
+                    "provider": "oci",
+                    "credential_name": "OCI_API_KEY_CRED",
+                    "object_list": [
+                      {"owner": "ADMIN", "name": "V_BNK_POLICIES"},
+                      {"owner": "ADMIN", "name": "V_BNK_RULES"}
+                    ],
+                    "region": "${genai_region}",
+                    "oci_compartment_id": "${oci_genai_compartment_id}",
+                    "oci_apiformat": "GENERIC"
+                  }');
+              END;
+              /
 
   - changeSet:
       id: adb-005-profile-care
@@ -135,7 +158,7 @@ databaseChangeLog:
 
   # ----- 8. Vector index — REMOVED with the RAG/compliance track.
 
-  # ----- 9. Tools (2): SQL × 2 -----
+  # ----- 9. Tools (3): SQL × 3 -----
   - changeSet:
       id: adb-005-tools
       author: adbsidecar
@@ -146,8 +169,9 @@ databaseChangeLog:
             splitStatements: false
             sql: |
               BEGIN
-                BEGIN DBMS_CLOUD_AI_AGENT.DROP_TOOL(tool_name => 'TXN_SQL_TOOL',  force => true); EXCEPTION WHEN OTHERS THEN NULL; END;
-                BEGIN DBMS_CLOUD_AI_AGENT.DROP_TOOL(tool_name => 'CARE_SQL_TOOL', force => true); EXCEPTION WHEN OTHERS THEN NULL; END;
+                BEGIN DBMS_CLOUD_AI_AGENT.DROP_TOOL(tool_name => 'TXN_SQL_TOOL',        force => true); EXCEPTION WHEN OTHERS THEN NULL; END;
+                BEGIN DBMS_CLOUD_AI_AGENT.DROP_TOOL(tool_name => 'CARE_SQL_TOOL',       force => true); EXCEPTION WHEN OTHERS THEN NULL; END;
+                BEGIN DBMS_CLOUD_AI_AGENT.DROP_TOOL(tool_name => 'COMPLIANCE_SQL_TOOL', force => true); EXCEPTION WHEN OTHERS THEN NULL; END;
 
                 DBMS_CLOUD_AI_AGENT.CREATE_TOOL(
                   tool_name  => 'TXN_SQL_TOOL',
@@ -157,10 +181,14 @@ databaseChangeLog:
                   tool_name  => 'CARE_SQL_TOOL',
                   attributes => '{"tool_type":"SQL","tool_params":{"profile_name":"BANKING_NL2SQL_CARE"}}'
                 );
+                DBMS_CLOUD_AI_AGENT.CREATE_TOOL(
+                  tool_name  => 'COMPLIANCE_SQL_TOOL',
+                  attributes => '{"tool_type":"SQL","tool_params":{"profile_name":"BANKING_NL2SQL_COMPLIANCE"}}'
+                );
               END;
               /
 
-  # ----- 10. Agents (3) -----
+  # ----- 10. Agents (4) -----
   - changeSet:
       id: adb-005-agents
       author: adbsidecar
@@ -172,6 +200,7 @@ databaseChangeLog:
             sql: |
               BEGIN
                 BEGIN DBMS_CLOUD_AI_AGENT.DROP_AGENT(agent_name => 'TRANSACTION_ANALYST',   force => true); EXCEPTION WHEN OTHERS THEN NULL; END;
+                BEGIN DBMS_CLOUD_AI_AGENT.DROP_AGENT(agent_name => 'COMPLIANCE_OFFICER',    force => true); EXCEPTION WHEN OTHERS THEN NULL; END;
                 BEGIN DBMS_CLOUD_AI_AGENT.DROP_AGENT(agent_name => 'CUSTOMER_CARE_LIAISON', force => true); EXCEPTION WHEN OTHERS THEN NULL; END;
                 BEGIN DBMS_CLOUD_AI_AGENT.DROP_AGENT(agent_name => 'CASE_SYNTHESIZER',      force => true); EXCEPTION WHEN OTHERS THEN NULL; END;
 
@@ -180,6 +209,15 @@ databaseChangeLog:
                   attributes => '{
                     "profile_name": "BANKING_NL2SQL_TXN",
                     "role": "You are a bank transaction analyst. When given a customer or transaction question, retrieve concrete facts only: which accounts, which transactions, amounts, dates, counterparties, geo, status. Do not interpret, recommend, or speculate. Return findings as a bullet list with one fact per line.",
+                    "enable_human_tool": "false"
+                  }'
+                );
+
+                DBMS_CLOUD_AI_AGENT.CREATE_AGENT(
+                  agent_name => 'COMPLIANCE_OFFICER',
+                  attributes => '{
+                    "profile_name": "BANKING_NL2SQL_COMPLIANCE",
+                    "role": "You are a bank compliance officer. Given transaction facts from the analyst, identify which AML, KYC, Reg E, OFAC, or fraud rules and policies apply. Cite rule codes and quote relevant policy sections. Classify each finding as INFO, WARNING, or VIOLATION.",
                     "enable_human_tool": "false"
                   }'
                 );
@@ -197,14 +235,14 @@ databaseChangeLog:
                   agent_name => 'CASE_SYNTHESIZER',
                   attributes => '{
                     "profile_name": "BANKING_CHAT",
-                    "role": "You are a senior banking case manager. Given transaction facts and customer-care context, produce a final case file with three sections: Findings, Risk rating (LOW/MEDIUM/HIGH), Recommended next actions. Maximum 200 words. Be concrete; do not invent facts.",
+                    "role": "You are a senior banking case manager. Given transaction facts, compliance findings, and customer-care context, produce a final case file with three sections: Findings, Risk rating (LOW/MEDIUM/HIGH), Recommended next actions. Maximum 200 words. Be concrete; do not invent facts.",
                     "enable_human_tool": "false"
                   }'
                 );
               END;
               /
 
-  # ----- 11. Tasks (3) -----
+  # ----- 11. Tasks (4) -----
   - changeSet:
       id: adb-005-tasks
       author: adbsidecar
@@ -216,6 +254,7 @@ databaseChangeLog:
             sql: |
               BEGIN
                 BEGIN DBMS_CLOUD_AI_AGENT.DROP_TASK(task_name => 'PULL_TXN_FACTS',      force => true); EXCEPTION WHEN OTHERS THEN NULL; END;
+                BEGIN DBMS_CLOUD_AI_AGENT.DROP_TASK(task_name => 'ASSESS_COMPLIANCE',   force => true); EXCEPTION WHEN OTHERS THEN NULL; END;
                 BEGIN DBMS_CLOUD_AI_AGENT.DROP_TASK(task_name => 'GATHER_CARE_CONTEXT', force => true); EXCEPTION WHEN OTHERS THEN NULL; END;
                 BEGIN DBMS_CLOUD_AI_AGENT.DROP_TASK(task_name => 'SYNTHESIZE_CASE',     force => true); EXCEPTION WHEN OTHERS THEN NULL; END;
 
@@ -224,6 +263,15 @@ databaseChangeLog:
                   attributes => '{
                     "instruction": "Retrieve transactional facts relevant to the user request: {query}. Use the SQL tool. Return only facts; do not analyse.",
                     "tools": ["TXN_SQL_TOOL"]
+                  }'
+                );
+
+                DBMS_CLOUD_AI_AGENT.CREATE_TASK(
+                  task_name  => 'ASSESS_COMPLIANCE',
+                  attributes => '{
+                    "instruction": "Given the user request {query} and the transactional facts in your input, identify all applicable rules and policies. Use the SQL tool for rule lookups against V_BNK_POLICIES and V_BNK_RULES. List each finding with rule code, severity, and a short explanation.",
+                    "tools": ["COMPLIANCE_SQL_TOOL"],
+                    "input": "PULL_TXN_FACTS"
                   }'
                 );
 
@@ -240,13 +288,13 @@ databaseChangeLog:
                 -- task name in "input"; in sequential team flow this synth
                 -- task automatically receives the immediate predecessor's
                 -- output (GATHER_CARE_CONTEXT) and the LLM can reach back
-                -- to PULL_TXN_FACTS through the team's conversation
+                -- to earlier tasks through the team's conversation
                 -- history. Specifying multiple inputs (string or JSON
                 -- array) yields ORA-20051 "Invalid value for task object".
                 DBMS_CLOUD_AI_AGENT.CREATE_TASK(
                   task_name  => 'SYNTHESIZE_CASE',
                   attributes => '{
-                    "instruction": "Compose the final case file for the user request: {query}. Use the transaction facts and customer-care context available in the team conversation history. Output sections: Findings, Risk rating, Recommended next actions."
+                    "instruction": "Compose the final case file for the user request: {query}. Use the transaction facts, compliance findings, and customer-care context available in the team conversation history. Output sections: Findings, Risk rating, Recommended next actions."
                   }'
                 );
               END;
@@ -269,6 +317,7 @@ databaseChangeLog:
                   attributes => '{
                     "agents": [
                       {"name":"TRANSACTION_ANALYST",    "task":"PULL_TXN_FACTS"},
+                      {"name":"COMPLIANCE_OFFICER",     "task":"ASSESS_COMPLIANCE"},
                       {"name":"CUSTOMER_CARE_LIAISON",  "task":"GATHER_CARE_CONTEXT"},
                       {"name":"CASE_SYNTHESIZER",       "task":"SYNTHESIZE_CASE"}
                     ],

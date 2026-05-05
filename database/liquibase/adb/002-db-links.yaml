@@ -89,13 +89,98 @@ databaseChangeLog:
         - sql:
             sql: DROP VIEW V_TRANSACTIONS
 
-  # PostgreSQL 18 is intentionally NOT linked.
-  # See docs/ISSUE_AI_AGENT_RUN_TEAM_PG_LINK_WEDGE.md — on this ADB build
-  # DBMS_CLOUD_AI_AGENT.RUN_TEAM enumerates every entry in USER_DB_LINKS
-  # at task warm-up and cannot enumerate PG_LINK, which durably wedges
-  # every team in the schema. PG_CRED + PG_LINK + V_POLICIES + V_RULES
-  # were therefore removed from this changelog. The Postgres engine
-  # remains reachable directly via postgresJdbc and via route=direct.
+  # --- PostgreSQL 18 (heterogeneous link) ---
+  # PG_LINK + the COMPLIANCE agent track work in tandem with the
+  # AgentsService.keepWarm() scheduled task. Without continuous traffic
+  # on the agent path, the DBMS_CLOUD_AI_AGENT scheduler-worker session
+  # caches a dead PG_LINK gateway connection (HS_IDLE_TIMEOUT = 5 min)
+  # and TASK_0 fast-fails. See docs/ISSUE_AI_AGENT_RUN_TEAM_PG_LINK_WEDGE.md.
+
+  - changeSet:
+      id: adb-002-cred-pg
+      author: adbsidecar
+      changes:
+        - sql:
+            endDelimiter: "/"
+            splitStatements: false
+            sql: |
+              BEGIN
+                BEGIN DBMS_CLOUD.DROP_CREDENTIAL('PG_CRED'); EXCEPTION WHEN OTHERS THEN NULL; END;
+                DBMS_CLOUD.CREATE_CREDENTIAL(
+                  credential_name => 'PG_CRED',
+                  username        => 'postgres',
+                  password        => '${postgres_db_password}'
+                );
+              END;
+              /
+      rollback:
+        - sql:
+            endDelimiter: "/"
+            splitStatements: false
+            sql: |
+              BEGIN DBMS_CLOUD.DROP_CREDENTIAL('PG_CRED'); END;
+              /
+
+  - changeSet:
+      id: adb-002-link-pg
+      author: adbsidecar
+      changes:
+        - sql:
+            endDelimiter: "/"
+            splitStatements: false
+            sql: |
+              BEGIN
+                BEGIN DBMS_CLOUD_ADMIN.DROP_DATABASE_LINK('PG_LINK'); EXCEPTION WHEN OTHERS THEN NULL; END;
+                DBMS_CLOUD_ADMIN.CREATE_DATABASE_LINK(
+                  db_link_name       => 'PG_LINK',
+                  hostname           => '${databases_fqdn}',
+                  port               => 5432,
+                  service_name       => 'postgres',
+                  ssl_server_cert_dn => NULL,
+                  credential_name    => 'PG_CRED',
+                  gateway_params     => JSON_OBJECT('db_type' VALUE 'postgres'),
+                  public_link        => FALSE,
+                  private_target     => TRUE
+                );
+              END;
+              /
+      rollback:
+        - sql:
+            endDelimiter: "/"
+            splitStatements: false
+            sql: |
+              BEGIN DBMS_CLOUD_ADMIN.DROP_DATABASE_LINK('PG_LINK'); END;
+              /
+
+  - changeSet:
+      id: adb-002-view-policies
+      author: adbsidecar
+      changes:
+        - sql:
+            endDelimiter: "/"
+            splitStatements: false
+            sql: |
+              CREATE OR REPLACE VIEW V_POLICIES AS
+              SELECT "id" AS id, "name" AS name, "description" AS description
+              FROM "public"."policies"@PG_LINK
+              /
+      rollback:
+        - sql: { sql: DROP VIEW V_POLICIES }
+
+  - changeSet:
+      id: adb-002-view-rules
+      author: adbsidecar
+      changes:
+        - sql:
+            endDelimiter: "/"
+            splitStatements: false
+            sql: |
+              CREATE OR REPLACE VIEW V_RULES AS
+              SELECT "id" AS id, "policy_id" AS policy_id, "expression" AS expression
+              FROM "public"."rules"@PG_LINK
+              /
+      rollback:
+        - sql: { sql: DROP VIEW V_RULES }
 
   # --- MongoDB 8 (heterogeneous link) ---
 

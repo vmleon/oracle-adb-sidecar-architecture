@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 
+import javax.sql.DataSource;
 import java.util.List;
 import java.util.Map;
 
@@ -24,7 +25,8 @@ class AgentsServiceTest {
     @BeforeEach
     void setUp() {
         jdbc = mock(JdbcTemplate.class);
-        service = new AgentsService(jdbc, "BANKING_INVESTIGATION_TEAM", false);
+        when(jdbc.getDataSource()).thenReturn(mock(DataSource.class));
+        service = new AgentsService(jdbc, "BANKING_INVESTIGATION_TEAM", false, false);
     }
 
     @Test
