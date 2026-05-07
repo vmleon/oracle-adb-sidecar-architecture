@@ -23,6 +23,7 @@ database/wallet/
 src/backend/build/
 src/backend/.gradle/
 src/backend/out/
+src/backend/logs/
 src/backend/src/main/resources/application-local.yaml
 
 # Node / Angular
