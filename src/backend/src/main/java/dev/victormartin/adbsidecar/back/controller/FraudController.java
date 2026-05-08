@@ -39,42 +39,72 @@ public class FraudController {
             )
             """;
 
-    // Fan-out: a single source with many distinct destinations.
+    // Fan-out: a single source with ≥5 distinct destinations inside any
+    // rolling 30-minute window. Real fraud detection uses sliding windows;
+    // a lifetime distinct-counterparty count would flag normal payroll
+    // accounts (50 employees over a year) as fraud.
     private static final String FANOUT_SQL = """
             SELECT src_id   AS "srcId",
                    src_name AS "srcName",
-                   COUNT(DISTINCT dst_id) AS "fanout"
-            FROM GRAPH_TABLE (banking_graph
-              MATCH (a) -[t]-> (b)
-              COLUMNS (
-                a.id            AS src_id,
-                a.customer_name AS src_name,
-                b.id            AS dst_id
+                   MAX(rolling_distinct) AS "fanout"
+            FROM (
+              SELECT src_id, src_name,
+                     COUNT(DISTINCT dst_id) OVER (
+                       PARTITION BY src_id
+                       ORDER BY occurred_at
+                       RANGE BETWEEN INTERVAL '30' MINUTE PRECEDING AND CURRENT ROW
+                     ) AS rolling_distinct
+              FROM GRAPH_TABLE (banking_graph
+                MATCH (a) -[t]-> (b)
+                COLUMNS (
+                  a.id            AS src_id,
+                  a.customer_name AS src_name,
+                  b.id            AS dst_id,
+                  t.occurred_at   AS occurred_at
+                )
               )
             )
+            WHERE rolling_distinct >= 5
             GROUP BY src_id, src_name
-            HAVING COUNT(DISTINCT dst_id) >= 5
-            ORDER BY COUNT(DISTINCT dst_id) DESC
+            ORDER BY MAX(rolling_distinct) DESC
             """;
 
-    // Structuring: many sub-CTR transfers from one source.
+    // Structuring: ≥3 sub-$10K transfers from one source totalling ≥$25K
+    // inside any rolling 7-day window. Filter on the rolling values BEFORE
+    // aggregating per source so both thresholds are met simultaneously in
+    // at least one window — otherwise MAX(count) and MAX(sum) could come
+    // from different windows and falsely trigger.
     private static final String STRUCTURING_SQL = """
             SELECT src_id   AS "srcId",
                    src_name AS "srcName",
-                   COUNT(*) AS "transferCount",
-                   SUM(amt) AS "totalAmount"
-            FROM GRAPH_TABLE (banking_graph
-              MATCH (a) -[t]-> (b)
-              WHERE t.amount BETWEEN 8000 AND 9999
-              COLUMNS (
-                a.id            AS src_id,
-                a.customer_name AS src_name,
-                t.amount        AS amt
+                   MAX(rolling_count) AS "transferCount",
+                   MAX(rolling_sum)   AS "totalAmount"
+            FROM (
+              SELECT src_id, src_name,
+                     COUNT(*) OVER (
+                       PARTITION BY src_id
+                       ORDER BY occurred_at
+                       RANGE BETWEEN INTERVAL '7' DAY PRECEDING AND CURRENT ROW
+                     ) AS rolling_count,
+                     SUM(amt) OVER (
+                       PARTITION BY src_id
+                       ORDER BY occurred_at
+                       RANGE BETWEEN INTERVAL '7' DAY PRECEDING AND CURRENT ROW
+                     ) AS rolling_sum
+              FROM GRAPH_TABLE (banking_graph
+                MATCH (a) -[t]-> (b)
+                WHERE t.amount BETWEEN 8000 AND 9999
+                COLUMNS (
+                  a.id            AS src_id,
+                  a.customer_name AS src_name,
+                  t.occurred_at   AS occurred_at,
+                  t.amount        AS amt
+                )
               )
             )
+            WHERE rolling_count >= 3 AND rolling_sum >= 25000
             GROUP BY src_id, src_name
-            HAVING COUNT(*) >= 3 AND SUM(amt) >= 25000
-            ORDER BY SUM(amt) DESC
+            ORDER BY MAX(rolling_sum) DESC
             """;
 
     // Cross-border wires: outbound WIRE traffic by destination country, with
