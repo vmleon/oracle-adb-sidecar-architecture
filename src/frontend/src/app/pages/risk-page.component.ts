@@ -5,20 +5,6 @@ import type { ChartConfiguration, ChartData } from 'chart.js';
 import { ReadinessService } from '../readiness.service';
 import { RiskDashboard, RiskService } from '../risk.service';
 
-const COUNTRY_NAMES: Record<string, string> = {
-  BY: 'Belarus', IR: 'Iran', KP: 'North Korea', RU: 'Russia',
-  SY: 'Syria', VE: 'Venezuela', MM: 'Myanmar', CU: 'Cuba',
-  US: 'United States', GB: 'United Kingdom', DE: 'Germany',
-  IT: 'Italy', JP: 'Japan', FR: 'France', SG: 'Singapore',
-  AE: 'United Arab Emirates', SE: 'Sweden', IE: 'Ireland',
-  MX: 'Mexico', AR: 'Argentina', IN: 'India', NG: 'Nigeria',
-  BG: 'Bulgaria',
-};
-
-function countryName(code: string): string {
-  return COUNTRY_NAMES[code] ?? code;
-}
-
 @Component({
   selector: 'app-risk-page',
   imports: [BaseChartDirective, RouterLink],
@@ -72,47 +58,7 @@ function countryName(code: string): string {
       </section>
 
       <section class="card">
-        <h3>2 · Cross-border wire flows</h3>
-        @if (d.crossBorderWires.length === 0) {
-          <p class="empty">No outbound international wires in the current dataset.</p>
-        } @else {
-          <table class="data">
-            <thead>
-              <tr><th>Country</th><th>Code</th><th>Status</th><th class="num">Wires</th><th class="num">Total |amount|</th></tr>
-            </thead>
-            <tbody>
-              @for (r of d.crossBorderWires; track r.country) {
-                <tr [class.flag]="r.sanctioned">
-                  <td>{{ name(r.country) }}</td>
-                  <td><code>{{ r.country }}</code></td>
-                  <td>
-                    @if (r.sanctioned) {
-                      <span class="badge violation">OFAC sanctioned</span>
-                    } @else {
-                      <span class="badge ok">Permitted</span>
-                    }
-                  </td>
-                  <td class="num">{{ r.txnCount }}</td>
-                  <td class="num">{{ money(r.totalAmount) }}</td>
-                </tr>
-              }
-            </tbody>
-          </table>
-        }
-        <p class="footer">
-          Outbound <code>WIRE</code> transactions grouped by destination country.
-          Counterparties in jurisdictions sanctioned by the U.S. Office of
-          Foreign Assets Control (OFAC) — Belarus (BY), Iran (IR), North Korea
-          (KP), Russia (RU), Syria (SY), and others — trip <code>R-OFAC-001</code>
-          and must be blocked or held for Specially Designated Nationals (SDN)
-          screening under policy <code>P-OFAC-01</code>. International wires
-          above $10,000 also require senior-officer approval per
-          <code>R-WIRE-001</code>.
-        </p>
-      </section>
-
-      <section class="card">
-        <h3>3 · KYC pipeline</h3>
+        <h3>2 · KYC pipeline</h3>
         <div class="kyc-row">
           <div class="chart-wrap small">
             <canvas baseChart [type]="'doughnut'" [data]="kycData()" [options]="kycOpts"></canvas>
@@ -151,7 +97,7 @@ function countryName(code: string): string {
       </section>
 
       <section class="card">
-        <h3>4 · Risk tier × account status</h3>
+        <h3>3 · Risk tier × account status</h3>
         <div class="chart-wrap">
           <canvas baseChart [type]="'bar'" [data]="riskByStatusData()" [options]="riskByStatusOpts"></canvas>
         </div>
@@ -167,7 +113,7 @@ function countryName(code: string): string {
       </section>
 
       <section class="card">
-        <h3>5 · Tickets by priority over time</h3>
+        <h3>4 · Tickets by priority over time</h3>
         @if (d.ticketsByPriority.length === 0) {
           <p class="empty">No prioritised support tickets in the current dataset.</p>
         } @else {
@@ -186,7 +132,7 @@ function countryName(code: string): string {
       </section>
 
       <section class="card">
-        <h3>6 · Active rule violations</h3>
+        <h3>5 · Active rule violations</h3>
         <table class="data">
           <thead>
             <tr><th>Code</th><th>Severity</th><th>Rule</th><th>Policy</th><th class="num">Count</th></tr>
@@ -328,11 +274,6 @@ export class RiskPageComponent {
         });
       }
     });
-  }
-
-  name(code: string): string { return countryName(code); }
-  money(n: number): string {
-    return new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(n);
   }
 
   // Chart 1 — sub-CTR watchlist (stacked bar by customer)

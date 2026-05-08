@@ -8,6 +8,11 @@ export const routes: Routes = [
       import('./pages/risk-page.component').then((m) => m.RiskPageComponent),
   },
   {
+    path: 'fraud',
+    loadComponent: () =>
+      import('./pages/fraud-page.component').then((m) => m.FraudPageComponent),
+  },
+  {
     path: 'app',
     loadComponent: () =>
       import('./pages/app-page.component').then((m) => m.AppPageComponent),

@@ -8,6 +8,7 @@ import { RouterLink, RouterLinkActive } from '@angular/router';
     <nav class="nav">
       <div class="left">
         <a routerLink="/risk" routerLinkActive="active">Risk Dashboard</a>
+        <a routerLink="/fraud" routerLinkActive="active">Fraud Dashboard</a>
         <a routerLink="/app" routerLinkActive="active">Current System</a>
       </div>
       <div class="right">
