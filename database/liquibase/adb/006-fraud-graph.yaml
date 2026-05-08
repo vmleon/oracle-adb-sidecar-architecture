@@ -1,0 +1,157 @@
+databaseChangeLog:
+  # ---------------------------------------------------------------------------
+  # SQL Property Graph for fraud-pattern detection.
+  # Lives on ADB so the agent surface can reach it without an extra hop.
+  # `transactions` on the production side is a blockchain table (item #1)
+  # and can't be retrofitted with src/dst account FKs, so the graph uses a
+  # local edges table seeded with synthetic fraud-shaped patterns plus a
+  # baseline of normal activity. Vertex set mirrors V_BNK_ACCOUNTS so demo
+  # account IDs (Carol Diaz = 3, Bob Chen credit = 22, Jamal Reed = 24, …)
+  # appear in the graph.
+  # ---------------------------------------------------------------------------
+
+  # ----- 1. Local accounts vertex table -----
+  - changeSet:
+      id: adb-006-create-local-accounts
+      author: adbsidecar
+      changes:
+        - createTable:
+            tableName: local_accounts
+            columns:
+              - column:
+                  name: id
+                  type: NUMBER(10)
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: customer_name
+                  type: VARCHAR2(100)
+              - column:
+                  name: balance
+                  type: NUMBER(12,2)
+
+  # Snapshot accounts from the federated view at deploy time. Seed-once;
+  # not refreshed automatically. The fraud demo uses small, stable IDs.
+  - changeSet:
+      id: adb-006-seed-local-accounts
+      author: adbsidecar
+      changes:
+        - sql:
+            sql: |
+              INSERT INTO local_accounts (id, customer_name, balance)
+              SELECT id, customer_name, balance FROM V_BNK_ACCOUNTS
+
+  # ----- 2. Edge table (transactions are not a true graph edge in prod;
+  #         this is a graph-shaped projection seeded with fraud patterns) -----
+  - changeSet:
+      id: adb-006-create-transaction-edges
+      author: adbsidecar
+      changes:
+        - createTable:
+            tableName: transaction_edges
+            columns:
+              - column:
+                  name: id
+                  type: NUMBER(10)
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: src_account_id
+                  type: NUMBER(10)
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_txnedge_src
+                    references: local_accounts(id)
+              - column:
+                  name: dst_account_id
+                  type: NUMBER(10)
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_txnedge_dst
+                    references: local_accounts(id)
+              - column:
+                  name: amount
+                  type: NUMBER(12,2)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: occurred_at
+                  type: TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: txn_type
+                  type: VARCHAR2(8)
+
+  # ----- 3. Seed fraud-shaped patterns + baseline normal activity -----
+  - changeSet:
+      id: adb-006-seed-transaction-edges
+      author: adbsidecar
+      changes:
+        - sql:
+            splitStatements: true
+            endDelimiter: ";"
+            sql: |
+              -- Cycle (A → B → C → A): account 21 → 27 → 33 → 21, ~$4500 each, tight window
+              INSERT INTO transaction_edges VALUES (1001, 21, 27, 4500.00, TIMESTAMP '2026-04-15 09:00:00', 'WIRE');
+              INSERT INTO transaction_edges VALUES (1002, 27, 33, 4500.00, TIMESTAMP '2026-04-15 10:30:00', 'WIRE');
+              INSERT INTO transaction_edges VALUES (1003, 33, 21, 4500.00, TIMESTAMP '2026-04-15 12:00:00', 'WIRE');
+
+              -- Fan-out: account 24 (Jamal Reed, frozen) sends to 8 distinct accounts in 30 min
+              INSERT INTO transaction_edges VALUES (1010, 24, 3,  250.00, TIMESTAMP '2026-04-16 14:02:00', 'CARD');
+              INSERT INTO transaction_edges VALUES (1011, 24, 5,  280.00, TIMESTAMP '2026-04-16 14:05:00', 'CARD');
+              INSERT INTO transaction_edges VALUES (1012, 24, 8,  310.00, TIMESTAMP '2026-04-16 14:09:00', 'CARD');
+              INSERT INTO transaction_edges VALUES (1013, 24, 12, 200.00, TIMESTAMP '2026-04-16 14:13:00', 'CARD');
+              INSERT INTO transaction_edges VALUES (1014, 24, 15, 270.00, TIMESTAMP '2026-04-16 14:17:00', 'CARD');
+              INSERT INTO transaction_edges VALUES (1015, 24, 18, 320.00, TIMESTAMP '2026-04-16 14:21:00', 'CARD');
+              INSERT INTO transaction_edges VALUES (1016, 24, 28, 290.00, TIMESTAMP '2026-04-16 14:25:00', 'CARD');
+              INSERT INTO transaction_edges VALUES (1017, 24, 35, 240.00, TIMESTAMP '2026-04-16 14:29:00', 'CARD');
+
+              -- Structuring: account 22 (Bob Chen credit) → 35, multiple sub-$10K transfers
+              INSERT INTO transaction_edges VALUES (1020, 22, 35, 9500.00, TIMESTAMP '2026-04-09 09:14:00', 'WIRE');
+              INSERT INTO transaction_edges VALUES (1021, 22, 35, 9700.00, TIMESTAMP '2026-04-10 10:22:00', 'WIRE');
+              INSERT INTO transaction_edges VALUES (1022, 22, 35, 9800.00, TIMESTAMP '2026-04-12 14:08:00', 'WIRE');
+              INSERT INTO transaction_edges VALUES (1023, 22, 35, 9550.00, TIMESTAMP '2026-04-14 11:46:00', 'WIRE');
+              INSERT INTO transaction_edges VALUES (1024, 22, 35, 9400.00, TIMESTAMP '2026-04-15 13:00:00', 'WIRE');
+
+              -- Baseline normal edges (so patterns don't match against an empty graph)
+              INSERT INTO transaction_edges VALUES (1100, 1, 23, 200.00,  TIMESTAMP '2026-04-02 10:00:00', 'ACH');
+              INSERT INTO transaction_edges VALUES (1101, 2, 22, 1500.00, TIMESTAMP '2026-04-04 09:00:00', 'ACH');
+              INSERT INTO transaction_edges VALUES (1102, 3, 21, 800.00,  TIMESTAMP '2026-04-06 16:30:00', 'ACH');
+              INSERT INTO transaction_edges VALUES (1103, 5, 25, 350.00,  TIMESTAMP '2026-04-07 11:00:00', 'CARD');
+              INSERT INTO transaction_edges VALUES (1104, 8, 28, 450.00,  TIMESTAMP '2026-04-08 15:00:00', 'CARD');
+              INSERT INTO transaction_edges VALUES (1105, 12, 32, 600.00, TIMESTAMP '2026-04-09 18:00:00', 'CARD')
+
+  # ----- 4. Property graph -----
+  - changeSet:
+      id: adb-006-property-graph
+      author: adbsidecar
+      runOnChange: true
+      changes:
+        - sql:
+            endDelimiter: "/"
+            splitStatements: false
+            sql: |
+              BEGIN
+                BEGIN EXECUTE IMMEDIATE 'DROP PROPERTY GRAPH banking_graph'; EXCEPTION WHEN OTHERS THEN NULL; END;
+                EXECUTE IMMEDIATE q'[
+                  CREATE PROPERTY GRAPH banking_graph
+                    VERTEX TABLES (
+                      local_accounts
+                        KEY (id)
+                        LABEL account
+                        PROPERTIES (id, customer_name, balance)
+                    )
+                    EDGE TABLES (
+                      transaction_edges
+                        KEY (id)
+                        SOURCE      KEY (src_account_id) REFERENCES local_accounts (id)
+                        DESTINATION KEY (dst_account_id) REFERENCES local_accounts (id)
+                        LABEL transfer
+                        PROPERTIES (id, amount, occurred_at, txn_type)
+                    )
+                ]';
+              END;
+              /

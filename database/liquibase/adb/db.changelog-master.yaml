@@ -5,3 +5,4 @@ databaseChangeLog:
   - include:
       { file: 004-banking-views-extended.yaml, relativeToChangelogFile: true }
   - include: { file: 005-select-ai-agents.yaml, relativeToChangelogFile: true }
+  - include: { file: 006-fraud-graph.yaml, relativeToChangelogFile: true }
