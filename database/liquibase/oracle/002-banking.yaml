@@ -25,8 +25,9 @@ databaseChangeLog:
                     nullable: false
 
   - changeSet:
-      id: oracle-002-create-transactions
+      id: oracle-002-create-transactions-dev
       author: adbsidecar
+      contexts: dev
       changes:
         - createTable:
             tableName: transactions
@@ -55,6 +56,42 @@ databaseChangeLog:
                   defaultValueComputed: CURRENT_TIMESTAMP
                   constraints:
                     nullable: false
+              - column: { name: txn_type, type: VARCHAR2(8) }
+              - column: { name: currency, type: VARCHAR2(3) }
+              - column: { name: channel, type: VARCHAR2(8) }
+              - column: { name: merchant, type: VARCHAR2(80) }
+              - column: { name: merchant_country, type: VARCHAR2(2) }
+              - column: { name: counterparty_account, type: VARCHAR2(40) }
+              - column: { name: status, type: VARCHAR2(8) }
+              - column: { name: occurred_at, type: TIMESTAMP }
+
+  - changeSet:
+      id: oracle-002-create-transactions-prod
+      author: adbsidecar
+      contexts: prod
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              CREATE BLOCKCHAIN TABLE transactions (
+                id                    NUMBER(10) NOT NULL,
+                account_id            NUMBER(10) NOT NULL,
+                amount                NUMBER(12,2) NOT NULL,
+                tx_date               TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                txn_type              VARCHAR2(8),
+                currency              VARCHAR2(3),
+                channel               VARCHAR2(8),
+                merchant              VARCHAR2(80),
+                merchant_country      VARCHAR2(2),
+                counterparty_account  VARCHAR2(40),
+                status                VARCHAR2(8),
+                occurred_at           TIMESTAMP,
+                CONSTRAINT pk_transactions PRIMARY KEY (id),
+                CONSTRAINT fk_transactions_account FOREIGN KEY (account_id) REFERENCES accounts(id)
+              )
+              NO DROP UNTIL 0 DAYS IDLE
+              NO DELETE UNTIL 16 DAYS AFTER INSERT
+              HASHING USING "SHA2_512" VERSION "v1"
 
   - changeSet:
       id: oracle-002-seed-accounts
@@ -83,51 +120,15 @@ databaseChangeLog:
       id: oracle-002-seed-transactions
       author: adbsidecar
       changes:
-        - insert:
-            tableName: transactions
-            columns:
-              - { column: { name: id, valueNumeric: 1 } }
-              - { column: { name: account_id, valueNumeric: 1 } }
-              - { column: { name: amount, valueNumeric: -120.50 } }
-        - insert:
-            tableName: transactions
-            columns:
-              - { column: { name: id, valueNumeric: 2 } }
-              - { column: { name: account_id, valueNumeric: 1 } }
-              - { column: { name: amount, valueNumeric: 2000.00 } }
-        - insert:
-            tableName: transactions
-            columns:
-              - { column: { name: id, valueNumeric: 3 } }
-              - { column: { name: account_id, valueNumeric: 2 } }
-              - { column: { name: amount, valueNumeric: -45.00 } }
-        - insert:
-            tableName: transactions
-            columns:
-              - { column: { name: id, valueNumeric: 4 } }
-              - { column: { name: account_id, valueNumeric: 2 } }
-              - { column: { name: amount, valueNumeric: 7500.00 } }
-        - insert:
-            tableName: transactions
-            columns:
-              - { column: { name: id, valueNumeric: 5 } }
-              - { column: { name: account_id, valueNumeric: 2 } }
-              - { column: { name: amount, valueNumeric: -899.99 } }
-        - insert:
-            tableName: transactions
-            columns:
-              - { column: { name: id, valueNumeric: 6 } }
-              - { column: { name: account_id, valueNumeric: 3 } }
-              - { column: { name: amount, valueNumeric: 500.00 } }
-        - insert:
-            tableName: transactions
-            columns:
-              - { column: { name: id, valueNumeric: 7 } }
-              - { column: { name: account_id, valueNumeric: 3 } }
-              - { column: { name: amount, valueNumeric: -32.40 } }
-        - insert:
-            tableName: transactions
-            columns:
-              - { column: { name: id, valueNumeric: 8 } }
-              - { column: { name: account_id, valueNumeric: 1 } }
-              - { column: { name: amount, valueNumeric: -60.00 } }
+        - sql:
+            splitStatements: true
+            endDelimiter: ";"
+            sql: |
+              INSERT INTO transactions (id, account_id, amount,   txn_type, currency, channel, merchant,        merchant_country, counterparty_account, status,   occurred_at) VALUES (1, 1, -120.50, 'CARD', 'USD', 'POS',    'Trader Joe''s', 'US',             NULL,                 'POSTED', TIMESTAMP '2026-03-20 12:14:00');
+              INSERT INTO transactions (id, account_id, amount,   txn_type, currency, channel, merchant,        merchant_country, counterparty_account, status,   occurred_at) VALUES (2, 1,  2000.00, 'ACH',  'USD', 'ONLINE', NULL,            NULL,             NULL,                 'POSTED', TIMESTAMP '2026-04-01 09:00:00');
+              INSERT INTO transactions (id, account_id, amount,   txn_type, currency, channel, merchant,        merchant_country, counterparty_account, status,   occurred_at) VALUES (3, 2,  -45.00, 'CARD', 'USD', 'POS',    'Starbucks',     'US',             NULL,                 'POSTED', TIMESTAMP '2026-03-22 08:42:00');
+              INSERT INTO transactions (id, account_id, amount,   txn_type, currency, channel, merchant,        merchant_country, counterparty_account, status,   occurred_at) VALUES (4, 2,  7500.00, 'ACH',  'USD', 'ONLINE', NULL,            NULL,             NULL,                 'POSTED', TIMESTAMP '2026-04-01 09:00:00');
+              INSERT INTO transactions (id, account_id, amount,   txn_type, currency, channel, merchant,        merchant_country, counterparty_account, status,   occurred_at) VALUES (5, 2, -899.99, 'CARD', 'USD', 'POS',    'Best Buy',      'US',             NULL,                 'POSTED', TIMESTAMP '2026-04-08 15:30:00');
+              INSERT INTO transactions (id, account_id, amount,   txn_type, currency, channel, merchant,        merchant_country, counterparty_account, status,   occurred_at) VALUES (6, 3,   500.00, 'ACH',  'USD', 'ONLINE', NULL,            NULL,             NULL,                 'POSTED', TIMESTAMP '2026-04-01 09:00:00');
+              INSERT INTO transactions (id, account_id, amount,   txn_type, currency, channel, merchant,        merchant_country, counterparty_account, status,   occurred_at) VALUES (7, 3,  -32.40, 'CARD', 'USD', 'POS',    'CVS',           'US',             NULL,                 'POSTED', TIMESTAMP '2026-04-04 17:11:00');
+              INSERT INTO transactions (id, account_id, amount,   txn_type, currency, channel, merchant,        merchant_country, counterparty_account, status,   occurred_at) VALUES (8, 1,  -60.00, 'CARD', 'USD', 'POS',    'Whole Foods',   'US',             NULL,                 'POSTED', TIMESTAMP '2026-04-10 18:55:00');
