@@ -4,9 +4,9 @@
 
 **Keep your current app. Keep your current databases and their lifecycle. Attach Autonomous Database 26ai as a sidecar, layer AI features on top, and consolidate datasources on your own schedule.**
 
-This repository is a working live demo of the **Oracle Select AI "AI Proxy Database" pattern** (also called _Select AI sidecar_), as described in the Oracle Database 26ai Select AI User's Guide ([Use Autonomous AI Database as an AI Proxy for Select AI](https://docs.oracle.com/en/database/oracle/oracle-database/26/selai/select-ai-sidecar-databases.html)). An ADB 26ai instance acts as the AI Proxy: production data stays in Oracle Free 26ai and PostgreSQL 18 containers, ADB reaches them via `DBMS_CLOUD_ADMIN.CREATE_DATABASE_LINK` and exposes `V_BNK_*` views, and Select AI runs NL2SQL on top. The demo extends the documented NL2SQL pattern with a vector-RAG index and a 4-agent `DBMS_CLOUD_AI_AGENT.RUN_TEAM` investigation team — Select AI capabilities that compose with the AI Proxy pattern but are not covered on that specific docs page.
+This repository is a working live demo of the **Oracle Select AI "AI Proxy Database" pattern** (also called _Select AI sidecar_), as described in the Oracle Database 26ai Select AI User's Guide ([Use Autonomous AI Database as an AI Proxy for Select AI](https://docs.oracle.com/en/database/oracle/oracle-database/26/selai/select-ai-sidecar-databases.html)). An ADB 26ai instance acts as the AI Proxy: production data stays in Oracle 19c and PostgreSQL 18 containers, ADB reaches them via `DBMS_CLOUD_ADMIN.CREATE_DATABASE_LINK` and exposes `V_BNK_*` views, and Select AI runs NL2SQL on top. The demo extends the documented NL2SQL pattern with a vector-RAG index and a 4-agent `DBMS_CLOUD_AI_AGENT.RUN_TEAM` investigation team — Select AI capabilities that compose with the AI Proxy pattern but are not covered on that specific docs page.
 
-This repo is a working implementation of the stepping-stone pattern. Three Podman containers on the `databases` compute (Oracle Database Free 26ai, PostgreSQL 18, MongoDB 8) stand in for the kind of production databases an enterprise already runs. ADB 26ai is attached alongside them as the _sidecar_ — not the production store. It reaches into each engine via DB_LINK views, letting teams adopt Vector Search, Hybrid Vector Index, Select AI Agents, and the rest of 26ai's feature set over the same data without rehosting or rewriting.
+This repo is a working implementation of the stepping-stone pattern. Three Podman containers on the `databases` compute (Oracle 19c, PostgreSQL 18, MongoDB 8) stand in for the kind of production databases an enterprise already runs. ADB 26ai is attached alongside them as the _sidecar_ — not the production store. It reaches into each engine via DB_LINK views, letting teams adopt Vector Search, Hybrid Vector Index, Select AI Agents, and the rest of 26ai's feature set over the same data without rehosting or rewriting.
 
 ## What stays. What's added.
 
@@ -25,7 +25,7 @@ flowchart LR
     subgraph current ["Current System — unchanged"]
         direction TB
         app[Your application<br/>frontend + backend]:::existing
-        oracle[(Oracle / Oracle Free<br/>customers · accounts<br/>transactions · branches)]:::existing
+        oracle[(Oracle 19c<br/>customers · accounts<br/>transactions · branches)]:::existing
         postgres[(PostgreSQL<br/>policies · rules)]:::existing
         mongo[(MongoDB<br/>support_tickets)]:::existing
         app --> oracle
@@ -49,7 +49,7 @@ flowchart LR
     adb -. DB_LINK reads .-> postgres
 ```
 
-The frontend ships five routes against a small banking demo dataset seeded on first deploy: **customers + branches + accounts + transactions** in Oracle Free 26ai, **policies + rules** in PostgreSQL 18, **support_tickets** in MongoDB 8.
+The frontend ships five routes against a small banking demo dataset seeded on first deploy: **customers + branches + accounts + transactions** in Oracle 19c, **policies + rules** in PostgreSQL 18, **support_tickets** in MongoDB 8.
 
 - `/risk` — **Risk Dashboard** (default landing). Reads only from the existing production databases; no ADB involvement. Six KPI cards plus six charts (sub-CTR structuring watchlist, cross-border wire flows, KYC pipeline, risk × account-status mix, ticket priority over time, and an active-rule-violations table). Each chart cites the policy and rule codes that drive it.
 - `/app` — **Current System.** The backend opens direct JDBC/Mongo connections to each production database. Proves every datasource is reachable; this is what your app already does today.
@@ -130,7 +130,7 @@ flowchart LR
     L[CUSTOMER_CARE_LIAISON]:::agent
     S[CASE_SYNTHESIZER]:::agent
 
-    O[("Oracle Free 26ai<br/>customers · accounts<br/>transactions · branches")]:::store
+    O[("Oracle 19c<br/>customers · accounts<br/>transactions · branches")]:::store
     P[("Postgres 18<br/>policies · rules")]:::store
     M[("MongoDB 8<br/>support_tickets")]:::store
     R[("OCI Object Storage<br/>BANKING_POLICY_INDEX<br/>(5 markdown docs)")]:::rag
@@ -167,14 +167,16 @@ Customers asked first about the ADB sidecar architecture typically ask: _how muc
 
 ## Architecture
 
-| Tier                            | Component                                 | Subnet                   | Notes                                                                                |
-| ------------------------------- | ----------------------------------------- | ------------------------ | ------------------------------------------------------------------------------------ |
-| Frontend                        | Angular 21 served by nginx                | private (app)            | Reverse-proxies `/api/*` to back                                                     |
-| Backend                         | Spring Boot 3.5 / Java 23                 | private (app)            | Holds 4 datasource beans (3 JDBC + Mongo)                                            |
-| Production workload (simulated) | Podman containers on one compute (4 OCPU) | private (db)             | Oracle Free 26ai, Postgres 18, Mongo 8 — stand-ins for existing production databases |
-| AI sidecar                      | Autonomous Database 26ai (OLTP, ECPU)     | OCI-managed, mTLS wallet | Vector Search, Hybrid Vector Index, Select AI — layered over prod via DB_LINK        |
-| Ops                             | Bastion compute (1 OCPU)                  | public                   | OCI Bastion service enabled                                                          |
-| Edge                            | Flexible Load Balancer                    | public                   | `/api*` → back, default → front                                                      |
+| Tier                            | Component                                 | Subnet                   | Notes                                                                          |
+| ------------------------------- | ----------------------------------------- | ------------------------ | ------------------------------------------------------------------------------ |
+| Frontend                        | Angular 21 served by nginx                | private (app)            | Reverse-proxies `/api/*` to back                                               |
+| Backend                         | Spring Boot 3.5 / Java 23                 | private (app)            | Holds 4 datasource beans (3 JDBC + Mongo)                                      |
+| Production workload (simulated) | Podman containers on one compute (4 OCPU) | private (db)             | Oracle 19c, Postgres 18, Mongo 8 — stand-ins for existing production databases |
+| AI sidecar                      | Autonomous Database 26ai (OLTP, ECPU)     | OCI-managed, mTLS wallet | Vector Search, Hybrid Vector Index, Select AI — layered over prod via DB_LINK  |
+| Ops                             | Bastion compute (1 OCPU)                  | public                   | OCI Bastion service enabled                                                    |
+| Edge                            | Flexible Load Balancer                    | public                   | `/api*` → back, default → front                                                |
+
+> _The Oracle box is run as the Oracle Database Free 26ai container because Oracle does not ship a free-tier 19c binary; the federated path and demo features are version-agnostic._
 
 ```mermaid
 flowchart TB
@@ -192,7 +194,7 @@ flowchart TB
 
     subgraph dbnet [DB subnet 10.0.3.0/24 · production workload · simulated]
         subgraph databases [databases compute · podman]
-            oracle[(Oracle Free 26ai<br/>:1521)]
+            oracle[(Oracle 19c<br/>:1521)]
             postgres[(Postgres 18<br/>:5432)]
             mongo[(Mongo 8<br/>:27017)]
         end
@@ -248,7 +250,7 @@ End-to-end provisioning, prerequisites, and cleanup live in **[DEPLOY.md](DEPLOY
 ## More info
 
 - [DEPLOY.md](DEPLOY.md) — provisioning prerequisites, the `manage.py` flow, and cleanup.
-- [docs/FEDERATED_QUERIES.md](docs/FEDERATED_QUERIES.md) — the deep dive on how ADB reaches Oracle Free / Postgres / Mongo through `DBMS_CLOUD_ADMIN.CREATE_DATABASE_LINK`, with the two hard requirements (DNS-resolvable hostname, Mongo data outside `admin`) and the `ORA-17008` mid-run recovery path.
+- [docs/FEDERATED_QUERIES.md](docs/FEDERATED_QUERIES.md) — the deep dive on how ADB reaches Oracle 19c / Postgres / Mongo through `DBMS_CLOUD_ADMIN.CREATE_DATABASE_LINK`, with the two hard requirements (DNS-resolvable hostname, Mongo data outside `admin`) and the `ORA-17008` mid-run recovery path.
 - [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) — day-two playbook for each tier (ops, databases, back, front) plus how to poke at each database from the ops bastion.
 - [docs/ISSUE_AI_AGENT_RUN_TEAM_PG_LINK_WEDGE.md](docs/ISSUE_AI_AGENT_RUN_TEAM_PG_LINK_WEDGE.md) — the two `PG_LINK` heterogeneous-gateway failure modes (5-minute idle drop and the durable AI-agent enumeration wedge), and why `PG_LINK` is not deployed in this repo.
 - [docs/ISSUE_ADB_HETEROGENEOUS_MONGODB_OBJECT_NOT_FOUND.md](docs/ISSUE_ADB_HETEROGENEOUS_MONGODB_OBJECT_NOT_FOUND.md) — known issue: the third heterogeneous engine (Mongo via `MONGO_LINK`) is unusable due to a DataDirect ODBC bug.
