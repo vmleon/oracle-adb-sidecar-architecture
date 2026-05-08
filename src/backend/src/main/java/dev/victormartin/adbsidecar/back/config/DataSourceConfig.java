@@ -1,6 +1,11 @@
 package dev.victormartin.adbsidecar.back.config;
 
+import java.sql.SQLException;
+
 import javax.sql.DataSource;
+
+import oracle.ucp.jdbc.PoolDataSource;
+import oracle.ucp.jdbc.PoolDataSourceFactory;
 
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -12,16 +17,39 @@ import org.springframework.jdbc.core.JdbcTemplate;
 @Configuration
 public class DataSourceConfig {
 
-    @Bean(name = "adbDataSource")
+    public static class JdbcConn {
+        private String jdbcUrl;
+        private String username;
+        private String password;
+
+        public String getJdbcUrl() { return jdbcUrl; }
+        public void setJdbcUrl(String jdbcUrl) { this.jdbcUrl = jdbcUrl; }
+        public String getUsername() { return username; }
+        public void setUsername(String username) { this.username = username; }
+        public String getPassword() { return password; }
+        public void setPassword(String password) { this.password = password; }
+    }
+
+    @Bean("adbProps")
     @ConfigurationProperties("datasources.adb")
-    public DataSource adbDataSource() {
-        return DataSourceBuilder.create().build();
+    public JdbcConn adbProps() {
+        return new JdbcConn();
+    }
+
+    @Bean("oracleProps")
+    @ConfigurationProperties("datasources.oracle")
+    public JdbcConn oracleProps() {
+        return new JdbcConn();
+    }
+
+    @Bean(name = "adbDataSource")
+    public DataSource adbDataSource(@Qualifier("adbProps") JdbcConn p) throws SQLException {
+        return makeUcpPool("adb-ucp", p);
     }
 
     @Bean(name = "oracleDataSource")
-    @ConfigurationProperties("datasources.oracle")
-    public DataSource oracleDataSource() {
-        return DataSourceBuilder.create().build();
+    public DataSource oracleDataSource(@Qualifier("oracleProps") JdbcConn p) throws SQLException {
+        return makeUcpPool("oracle-ucp", p);
     }
 
     @Bean(name = "postgresDataSource")
@@ -43,5 +71,15 @@ public class DataSourceConfig {
     @Bean(name = "postgresJdbc")
     public JdbcTemplate postgresJdbc(@Qualifier("postgresDataSource") DataSource ds) {
         return new JdbcTemplate(ds);
+    }
+
+    private static PoolDataSource makeUcpPool(String poolName, JdbcConn p) throws SQLException {
+        PoolDataSource pds = PoolDataSourceFactory.getPoolDataSource();
+        pds.setConnectionPoolName(poolName);
+        pds.setConnectionFactoryClassName("oracle.jdbc.pool.OracleDataSource");
+        pds.setURL(p.getJdbcUrl());
+        pds.setUser(p.getUsername());
+        pds.setPassword(p.getPassword());
+        return pds;
     }
 }
