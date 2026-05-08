@@ -49,9 +49,10 @@ flowchart LR
     adb -. DB_LINK reads .-> postgres
 ```
 
-The frontend ships five routes against a small banking demo dataset seeded on first deploy: **customers + branches + accounts + transactions** in Oracle 19c, **policies + rules** in PostgreSQL 18, **support_tickets** in MongoDB 8.
+The frontend ships six routes against a small banking demo dataset seeded on first deploy: **customers + branches + accounts + transactions** in Oracle 19c, **policies + rules** in PostgreSQL 18, **support_tickets** in MongoDB 8.
 
-- `/risk` — **Risk Dashboard** (default landing). Reads only from the existing production databases; no ADB involvement. Six KPI cards plus six charts (sub-CTR structuring watchlist, cross-border wire flows, KYC pipeline, risk × account-status mix, ticket priority over time, and an active-rule-violations table). Each chart cites the policy and rule codes that drive it.
+- `/risk` — **Risk Dashboard** (default landing). Reads only from the existing production databases; no ADB involvement. Six KPI cards plus five charts (sub-CTR structuring watchlist, KYC pipeline, risk × account-status mix, ticket priority over time, and an active-rule-violations table). Each chart cites the policy and rule codes that drive it.
+- `/fraud` — **Fraud Dashboard.** Pattern-level fraud signals from a SQL Property Graph (`banking_graph`) on ADB plus the cross-border wire flows view. Four cards: round-trip cycles (A→B→C→A detected via `GRAPH_TABLE MATCH`), fan-out (single source → many destinations), structuring (sub-$10K transfers summing well over the CTR threshold), and the OFAC-flagged international wires that used to live on `/risk`. Each match comes with a deterministic risk score.
 - `/app` — **Current System.** The backend opens direct JDBC/Mongo connections to each production database. Proves every datasource is reachable; this is what your app already does today.
 - `/sidecar` — **sidecar path.** The backend queries ADB; ADB resolves `V_ACCOUNTS`, `V_TRANSACTIONS`, `V_POLICIES`, `V_RULES` over DB_LINK. Proves the federated path end-to-end. (Mongo via sidecar is deliberately disabled; see [docs/ISSUE_ADB_HETEROGENEOUS_MONGODB_OBJECT_NOT_FOUND.md](docs/ISSUE_ADB_HETEROGENEOUS_MONGODB_OBJECT_NOT_FOUND.md).)
 - `/agents` — **Select AI Agents.** A four-agent banking investigation team running entirely inside the ADB sidecar (`DBMS_CLOUD_AI_AGENT.RUN_TEAM`). One prompt fans out to a Transaction Analyst, a Compliance Officer (SQL + RAG over a policy-doc vector index), a Customer Care Liaison, and a Case Synthesiser; the page renders the final answer plus a per-task execution trace. See the "Select AI Agents" section below.
@@ -61,9 +62,22 @@ The frontend ships five routes against a small banking demo dataset seeded on fi
 
 ![Risk Dashboard screenshot](images/risk.png)
 
-A compliance & risk overview built from the same production data as `/app`. KPI strip across the top (KYC attention, frozen accounts, high-risk customers, sub-CTR activity, decline velocity, open HIGH-priority tickets) followed by six chart cards. Every chart card has a banking-language footer that cites the relevant rule codes (`R-AML-005`, `R-FRAUD-007`, `R-OFAC-001`, …) and policy codes (`P-CTR-01`, `P-OFAC-01`, `P-KYC-01`, …) so a compliance officer can read it without a translator.
+A compliance & risk overview built from the same production data as `/app`. KPI strip across the top (KYC attention, frozen accounts, high-risk customers, sub-CTR activity, decline velocity, open HIGH-priority tickets) followed by five chart cards. Every chart card has a banking-language footer that cites the relevant rule codes (`R-AML-005`, `R-FRAUD-007`, `R-OFAC-001`, …) and policy codes (`P-CTR-01`, `P-OFAC-01`, `P-KYC-01`, …) so a compliance officer can read it without a translator.
 
-The dashboard is intentionally the human counterpart to `/agents`: the same patterns that get computed visually here are what the Select AI investigation team narrates in plain English over there.
+The dashboard is intentionally the human counterpart to `/agents`: the same patterns that get computed visually here are what the Select AI investigation team narrates in plain English over there. Fraud-shaped signals (cross-border wires, graph-pattern matches) live on `/fraud`; this dashboard is for prudential and compliance views (KYC, account status mix, ticket priority, rule-violation counts).
+
+### `/fraud` — Fraud Dashboard
+
+Pattern-level fraud detection driven by Oracle's SQL Property Graph feature. A `banking_graph` on ADB models accounts as vertices and a `transaction_edges` table as edges; the backend runs three `GRAPH_TABLE (banking_graph MATCH ...)` queries — one per pattern — and the dashboard renders the matches.
+
+**Four cards:**
+
+1. **Round-trip cycles** — `MATCH (a)-[t1]->(b)-[t2]->(c)-[t3]->(a)` detects A→B→C→A loops with similar amounts and tight timestamps (a classic layering pattern). Canonicalised so each underlying triangle emits once. Each match is rendered as an inline SVG triangle alongside the customer names.
+2. **Fan-out** — a single source pushing funds to ≥5 distinct destinations in a short window. Often correlates with account takeover or money-mule activity.
+3. **Structuring** — ≥3 transfers in the $8,000–$9,999 band summing to ≥$25,000. The graph-level counterpart to the per-customer sub-CTR signal on `/risk`; both surface activity sized just under the $10,000 CTR threshold.
+4. **Cross-border wire flows** — moved over from `/risk`. Outbound `WIRE` transactions grouped by destination country, with OFAC-sanctioned jurisdictions flagged for `R-OFAC-001` violation under policy `P-OFAC-01`.
+
+**Why ADB and not on production.** Production `transactions` is a blockchain table (see [Architecture](#architecture)) which seals it against the `ALTER TABLE ADD COLUMN` and `UPDATE` operations that adding `src_account_id`/`dst_account_id` would require. The graph instead lives on ADB next to the agents/Select-AI surfaces, with `local_accounts` mirrored from `V_BNK_ACCOUNTS` at deploy time and `transaction_edges` seeded with synthetic but account-ID-faithful fraud patterns.
 
 ### `/app` — Current System
 
@@ -177,6 +191,8 @@ Customers asked first about the ADB sidecar architecture typically ask: _how muc
 | Edge                            | Flexible Load Balancer                    | public                   | `/api*` → back, default → front                                                |
 
 > _The Oracle box is run as the Oracle Database Free 26ai container because Oracle does not ship a free-tier 19c binary; the federated path and demo features are version-agnostic._
+
+**`transactions` is a blockchain table.** On the production-side Oracle, the `transactions` table is created as `BLOCKCHAIN TABLE ... HASHING USING SHA2_512`, with `NO DROP UNTIL 0 DAYS IDLE NO DELETE UNTIL 16 DAYS AFTER INSERT`. Every row is hash-chained to the previous row by Oracle, and `DBMS_BLOCKCHAIN_TABLE.VERIFY_ROWS` lets you cryptographically prove the ledger hasn't been tampered with — even by a privileged user with file-system access. The application reads this table the same way as any other (the chain columns are hidden), so the demo's "current app stays" promise holds end-to-end. Caveats inherited from the feature: only single-row INSERT works (no MERGE, no `INSERT /*+ APPEND */`, no distributed-transaction inserts), no UPDATE / DELETE / `ALTER TABLE` shape changes, and chain verification has to run on the production Oracle directly (not via DB_LINK from ADB).
 
 ```mermaid
 flowchart TB
