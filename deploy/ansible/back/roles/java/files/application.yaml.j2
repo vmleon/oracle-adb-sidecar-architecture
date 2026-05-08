@@ -15,12 +15,10 @@ datasources:
     jdbc-url: jdbc:oracle:thin:@{{ adb_service_name }}_high?TNS_ADMIN=/home/opc/back/wallet
     username: ADMIN
     password: "{{ adb_admin_password }}"
-    driver-class-name: oracle.jdbc.OracleDriver
   oracle:
     jdbc-url: jdbc:oracle:thin:@//{{ databases_private_ip }}:1521/FREEPDB1
     username: SYSTEM
     password: "{{ oracle_db_password }}"
-    driver-class-name: oracle.jdbc.OracleDriver
   postgres:
     jdbc-url: jdbc:postgresql://{{ databases_private_ip }}:5432/postgres
     username: postgres

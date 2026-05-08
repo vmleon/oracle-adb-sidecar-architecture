@@ -80,6 +80,9 @@ public class DataSourceConfig {
         pds.setURL(p.getJdbcUrl());
         pds.setUser(p.getUsername());
         pds.setPassword(p.getPassword());
+        pds.setInitialPoolSize(2);
+        pds.setMinPoolSize(2);
+        pds.setMaxPoolSize(10);
         return pds;
     }
 }
