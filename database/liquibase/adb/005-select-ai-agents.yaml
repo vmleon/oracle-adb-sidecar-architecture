@@ -128,9 +128,30 @@ databaseChangeLog:
               END;
               /
 
-  # BANKING_RAG profile and BANKING_POLICY_INDEX vector index are
-  # intentionally NOT created — they only fed COMPLIANCE_RAG_TOOL,
-  # which is removed along with the rest of the compliance track.
+  - changeSet:
+      id: adb-005-profile-rag
+      author: adbsidecar
+      runOnChange: true
+      changes:
+        - sql:
+            endDelimiter: "/"
+            splitStatements: false
+            sql: |
+              BEGIN
+                BEGIN DBMS_CLOUD_AI.DROP_PROFILE(profile_name => 'BANKING_RAG', force => true); EXCEPTION WHEN OTHERS THEN NULL; END;
+                DBMS_CLOUD_AI.CREATE_PROFILE(
+                  profile_name => 'BANKING_RAG',
+                  attributes   =>
+                  '{
+                    "provider": "oci",
+                    "credential_name": "OCI_API_KEY_CRED",
+                    "vector_index_name": "BANKING_POLICY_INDEX",
+                    "region": "${genai_region}",
+                    "oci_compartment_id": "${oci_genai_compartment_id}",
+                    "oci_apiformat": "GENERIC"
+                  }');
+              END;
+              /
 
   - changeSet:
       id: adb-005-profile-chat
@@ -156,9 +177,32 @@ databaseChangeLog:
               END;
               /
 
-  # ----- 8. Vector index — REMOVED with the RAG/compliance track.
+  # ----- 8. Vector index over the policy markdown bucket -----
+  - changeSet:
+      id: adb-005-vector-index
+      author: adbsidecar
+      runOnChange: true
+      changes:
+        - sql:
+            endDelimiter: "/"
+            splitStatements: false
+            sql: |
+              BEGIN
+                BEGIN DBMS_CLOUD_AI.DROP_VECTOR_INDEX(index_name => 'BANKING_POLICY_INDEX', force => true);
+                  EXCEPTION WHEN OTHERS THEN IF SQLCODE != -20000 THEN RAISE; END IF;
+                END;
+                DBMS_CLOUD_AI.CREATE_VECTOR_INDEX(
+                  index_name => 'BANKING_POLICY_INDEX',
+                  attributes => '{"vector_db_provider":"oracle",
+                                  "location":"https://objectstorage.${genai_region}.oraclecloud.com/n/${rag_bucket_namespace}/b/${rag_bucket_name}/o/",
+                                  "object_storage_credential_name":"OCI_API_KEY_CRED",
+                                  "profile_name":"BANKING_RAG",
+                                  "chunk_size":1500,
+                                  "chunk_overlap":300}');
+              END;
+              /
 
-  # ----- 9. Tools (3): SQL × 3 -----
+  # ----- 9. Tools (4): SQL × 3, RAG × 1 -----
   - changeSet:
       id: adb-005-tools
       author: adbsidecar
@@ -172,6 +216,7 @@ databaseChangeLog:
                 BEGIN DBMS_CLOUD_AI_AGENT.DROP_TOOL(tool_name => 'TXN_SQL_TOOL',        force => true); EXCEPTION WHEN OTHERS THEN NULL; END;
                 BEGIN DBMS_CLOUD_AI_AGENT.DROP_TOOL(tool_name => 'CARE_SQL_TOOL',       force => true); EXCEPTION WHEN OTHERS THEN NULL; END;
                 BEGIN DBMS_CLOUD_AI_AGENT.DROP_TOOL(tool_name => 'COMPLIANCE_SQL_TOOL', force => true); EXCEPTION WHEN OTHERS THEN NULL; END;
+                BEGIN DBMS_CLOUD_AI_AGENT.DROP_TOOL(tool_name => 'COMPLIANCE_RAG_TOOL', force => true); EXCEPTION WHEN OTHERS THEN NULL; END;
 
                 DBMS_CLOUD_AI_AGENT.CREATE_TOOL(
                   tool_name  => 'TXN_SQL_TOOL',
@@ -184,6 +229,10 @@ databaseChangeLog:
                 DBMS_CLOUD_AI_AGENT.CREATE_TOOL(
                   tool_name  => 'COMPLIANCE_SQL_TOOL',
                   attributes => '{"tool_type":"SQL","tool_params":{"profile_name":"BANKING_NL2SQL_COMPLIANCE"}}'
+                );
+                DBMS_CLOUD_AI_AGENT.CREATE_TOOL(
+                  tool_name  => 'COMPLIANCE_RAG_TOOL',
+                  attributes => '{"tool_type":"RAG","tool_params":{"profile_name":"BANKING_RAG"}}'
                 );
               END;
               /
@@ -217,7 +266,7 @@ databaseChangeLog:
                   agent_name => 'COMPLIANCE_OFFICER',
                   attributes => '{
                     "profile_name": "BANKING_NL2SQL_COMPLIANCE",
-                    "role": "You are a bank compliance officer. Given transaction facts from the analyst, identify which AML, KYC, Reg E, OFAC, or fraud rules and policies apply. Cite rule codes and quote relevant policy sections. Classify each finding as INFO, WARNING, or VIOLATION.",
+                    "role": "You are a bank compliance officer. Given transaction facts from the analyst, identify which AML, KYC, Reg E, OFAC, or fraud rules and policies apply. Use the SQL tool for rule data from V_BNK_POLICIES / V_BNK_RULES, and the RAG tool for policy text from the policy-doc index. Cite rule codes (e.g. R-AML-005) and quote relevant policy sections. Classify each finding as INFO, WARNING, or VIOLATION.",
                     "enable_human_tool": "false"
                   }'
                 );
@@ -269,8 +318,8 @@ databaseChangeLog:
                 DBMS_CLOUD_AI_AGENT.CREATE_TASK(
                   task_name  => 'ASSESS_COMPLIANCE',
                   attributes => '{
-                    "instruction": "Given the user request {query} and the transactional facts in your input, identify all applicable rules and policies. Use the SQL tool for rule lookups against V_BNK_POLICIES and V_BNK_RULES. List each finding with rule code, severity, and a short explanation.",
-                    "tools": ["COMPLIANCE_SQL_TOOL"],
+                    "instruction": "Given the user request {query} and the transactional facts in your input, identify all applicable rules and policies. Use COMPLIANCE_SQL_TOOL for rule lookups against V_BNK_POLICIES and V_BNK_RULES, and COMPLIANCE_RAG_TOOL to retrieve relevant policy passages from BANKING_POLICY_INDEX. List each finding with rule code, severity, a short explanation, and the policy quote.",
+                    "tools": ["COMPLIANCE_SQL_TOOL", "COMPLIANCE_RAG_TOOL"],
                     "input": "PULL_TXN_FACTS"
                   }'
                 );
