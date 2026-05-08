@@ -19,13 +19,6 @@ export interface SubCtrRow {
   total: number;
 }
 
-export interface CrossBorderRow {
-  country: string;
-  txnCount: number;
-  totalAmount: number;
-  sanctioned: boolean;
-}
-
 export interface KycPipeline {
   counts: { status: string; count: number }[];
   nonVerified: {
@@ -62,7 +55,6 @@ export interface RuleRow {
 export interface RiskDashboard {
   kpis: RiskKpis;
   subCtrWatchlist: SubCtrRow[];
-  crossBorderWires: CrossBorderRow[];
   kycPipeline: KycPipeline;
   riskByStatus: RiskByStatusRow[];
   ticketsByPriority: TicketBucket[];

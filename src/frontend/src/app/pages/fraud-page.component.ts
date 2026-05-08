@@ -1,8 +1,14 @@
 import { Component, computed, effect, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { ReadinessService } from '../readiness.service';
-import { CycleRow, FanoutRow, FraudPatterns, FraudService, StructuringRow } from '../fraud.service';
-import { CrossBorderRow, RiskDashboard, RiskService } from '../risk.service';
+import {
+  CrossBorderRow,
+  CycleRow,
+  FanoutRow,
+  FraudPatterns,
+  FraudService,
+  StructuringRow,
+} from '../fraud.service';
 
 const COUNTRY_NAMES: Record<string, string> = {
   BY: 'Belarus', IR: 'Iran', KP: 'North Korea', RU: 'Russia',
@@ -279,17 +285,15 @@ function countryName(code: string): string {
 })
 export class FraudPageComponent {
   private fraud = inject(FraudService);
-  private risk = inject(RiskService);
   private readiness = inject(ReadinessService);
 
   patterns = signal<FraudPatterns | null>(null);
-  riskData = signal<RiskDashboard | null>(null);
   loading = signal(false);
   error = signal<string | null>(null);
   ready = this.readiness.riskReady;
 
   crossBorder = computed<CrossBorderRow[]>(() =>
-    this.riskData()?.crossBorderWires ?? [],
+    this.patterns()?.crossBorderWires ?? [],
   );
 
   private fetched = false;
@@ -308,9 +312,6 @@ export class FraudPageComponent {
             this.error.set(e?.message ?? 'request failed');
             this.loading.set(false);
           },
-        });
-        this.risk.load().subscribe({
-          next: (r) => this.riskData.set(r),
         });
       }
     });

@@ -10,6 +10,8 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import dev.victormartin.adbsidecar.back.util.OfacCountries;
+
 @RestController
 @RequestMapping("/api/v1/fraud")
 public class FraudController {
@@ -75,10 +77,29 @@ public class FraudController {
             ORDER BY SUM(amt) DESC
             """;
 
-    private final JdbcTemplate adbJdbc;
+    // Cross-border wires: outbound WIRE traffic by destination country, with
+    // OFAC-sanctioned jurisdictions flagged. Runs against the production
+    // `transactions` table directly (the blockchain ledger) — not the graph.
+    private static final String CROSS_BORDER_WIRES_SQL = """
+            SELECT t.merchant_country AS "country",
+                   COUNT(*)           AS "txnCount",
+                   SUM(ABS(t.amount)) AS "totalAmount"
+            FROM transactions t
+            WHERE t.txn_type = 'WIRE'
+              AND t.merchant_country IS NOT NULL
+              AND t.merchant_country <> 'US'
+            GROUP BY t.merchant_country
+            ORDER BY SUM(ABS(t.amount)) DESC
+            """;
 
-    public FraudController(@Qualifier("adbJdbc") JdbcTemplate adbJdbc) {
+    private final JdbcTemplate adbJdbc;
+    private final JdbcTemplate oracleJdbc;
+
+    public FraudController(
+            @Qualifier("adbJdbc") JdbcTemplate adbJdbc,
+            @Qualifier("oracleJdbc") JdbcTemplate oracleJdbc) {
         this.adbJdbc = adbJdbc;
+        this.oracleJdbc = oracleJdbc;
     }
 
     @GetMapping("/patterns")
@@ -87,7 +108,16 @@ public class FraudController {
         body.put("cycles", scoreCycles(adbJdbc.queryForList(CYCLES_SQL)));
         body.put("fanout", scoreFanout(adbJdbc.queryForList(FANOUT_SQL)));
         body.put("structuring", scoreStructuring(adbJdbc.queryForList(STRUCTURING_SQL)));
+        body.put("crossBorderWires", crossBorderWires());
         return body;
+    }
+
+    private List<Map<String, Object>> crossBorderWires() {
+        List<Map<String, Object>> rows = oracleJdbc.queryForList(CROSS_BORDER_WIRES_SQL);
+        for (Map<String, Object> row : rows) {
+            row.put("sanctioned", OfacCountries.SET.contains(row.get("country")));
+        }
+        return rows;
     }
 
     private static List<Map<String, Object>> scoreCycles(List<Map<String, Object>> rows) {

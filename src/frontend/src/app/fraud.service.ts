@@ -28,10 +28,18 @@ export interface StructuringRow {
   riskScore: number;
 }
 
+export interface CrossBorderRow {
+  country: string;
+  txnCount: number;
+  totalAmount: number;
+  sanctioned: boolean;
+}
+
 export interface FraudPatterns {
   cycles: CycleRow[];
   fanout: FanoutRow[];
   structuring: StructuringRow[];
+  crossBorderWires: CrossBorderRow[];
 }
 
 @Injectable({ providedIn: 'root' })
