@@ -29,27 +29,34 @@ databaseChangeLog:
       author: adbsidecar
       changes:
         - sql:
+            endDelimiter: "/"
             splitStatements: false
             sql: |
-              CREATE BLOCKCHAIN TABLE transactions (
-                id                    NUMBER(10) NOT NULL,
-                account_id            NUMBER(10) NOT NULL,
-                amount                NUMBER(12,2) NOT NULL,
-                tx_date               TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
-                txn_type              VARCHAR2(8),
-                currency              VARCHAR2(3),
-                channel               VARCHAR2(8),
-                merchant              VARCHAR2(80),
-                merchant_country      VARCHAR2(2),
-                counterparty_account  VARCHAR2(40),
-                status                VARCHAR2(8),
-                occurred_at           TIMESTAMP,
-                CONSTRAINT pk_transactions PRIMARY KEY (id),
-                CONSTRAINT fk_transactions_account FOREIGN KEY (account_id) REFERENCES accounts(id)
-              )
-              NO DROP UNTIL 0 DAYS IDLE
-              NO DELETE UNTIL 16 DAYS AFTER INSERT
-              HASHING USING "SHA2_512" VERSION "v1"
+              BEGIN
+                BEGIN EXECUTE IMMEDIATE 'DROP TABLE transactions PURGE'; EXCEPTION WHEN OTHERS THEN NULL; END;
+                EXECUTE IMMEDIATE q'[
+                  CREATE BLOCKCHAIN TABLE transactions (
+                    id                    NUMBER(10) NOT NULL,
+                    account_id            NUMBER(10) NOT NULL,
+                    amount                NUMBER(12,2) NOT NULL,
+                    tx_date               TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                    txn_type              VARCHAR2(8),
+                    currency              VARCHAR2(3),
+                    channel               VARCHAR2(8),
+                    merchant              VARCHAR2(80),
+                    merchant_country      VARCHAR2(2),
+                    counterparty_account  VARCHAR2(40),
+                    status                VARCHAR2(8),
+                    occurred_at           TIMESTAMP,
+                    CONSTRAINT pk_transactions PRIMARY KEY (id),
+                    CONSTRAINT fk_transactions_account FOREIGN KEY (account_id) REFERENCES accounts(id)
+                  )
+                  NO DROP UNTIL 0 DAYS IDLE
+                  NO DELETE UNTIL 16 DAYS AFTER INSERT
+                  HASHING USING "SHA2_512" VERSION "v1"
+                ]';
+              END;
+              /
 
   - changeSet:
       id: oracle-002-seed-accounts
