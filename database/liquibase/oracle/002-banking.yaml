@@ -25,50 +25,8 @@ databaseChangeLog:
                     nullable: false
 
   - changeSet:
-      id: oracle-002-create-transactions-dev
+      id: oracle-002-create-transactions
       author: adbsidecar
-      contexts: dev
-      changes:
-        - createTable:
-            tableName: transactions
-            columns:
-              - column:
-                  name: id
-                  type: NUMBER(10)
-                  constraints:
-                    primaryKey: true
-                    nullable: false
-              - column:
-                  name: account_id
-                  type: NUMBER(10)
-                  constraints:
-                    nullable: false
-                    foreignKeyName: fk_transactions_account
-                    references: accounts(id)
-              - column:
-                  name: amount
-                  type: NUMBER(12,2)
-                  constraints:
-                    nullable: false
-              - column:
-                  name: tx_date
-                  type: TIMESTAMP
-                  defaultValueComputed: CURRENT_TIMESTAMP
-                  constraints:
-                    nullable: false
-              - column: { name: txn_type, type: VARCHAR2(8) }
-              - column: { name: currency, type: VARCHAR2(3) }
-              - column: { name: channel, type: VARCHAR2(8) }
-              - column: { name: merchant, type: VARCHAR2(80) }
-              - column: { name: merchant_country, type: VARCHAR2(2) }
-              - column: { name: counterparty_account, type: VARCHAR2(40) }
-              - column: { name: status, type: VARCHAR2(8) }
-              - column: { name: occurred_at, type: TIMESTAMP }
-
-  - changeSet:
-      id: oracle-002-create-transactions-prod
-      author: adbsidecar
-      contexts: prod
       changes:
         - sql:
             splitStatements: false
