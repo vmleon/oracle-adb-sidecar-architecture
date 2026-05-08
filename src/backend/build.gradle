@@ -29,8 +29,14 @@ dependencies {
     // "NoSuchAlgorithmException: SSO KeyStore not available".
     implementation 'com.oracle.database.spring:oracle-spring-boot-starter-wallet:26.1.0'
     // UCP for the two Oracle pools (ADB, Oracle Free); Postgres stays on
-    // HikariCP via spring-boot-starter-jdbc.
-    implementation 'com.oracle.database.spring:oracle-spring-boot-starter-ucp:26.1.0'
+    // HikariCP via spring-boot-starter-jdbc. We depend on ucp11 directly
+    // rather than oracle-spring-boot-starter-ucp because (1) we manually
+    // construct PoolDataSource beans in DataSourceConfig so the starter's
+    // auto-config doesn't help, and (2) the starter at 26.1.0 pulled in
+    // ucp 23.7 — older than ojdbc11 23.9 — and the version drift broke
+    // UCP's runtime proxy generation on Java 23 with a "cannot resolve
+    // or generate proxy" IllegalStateException at first getConnection().
+    implementation 'com.oracle.database.jdbc:ucp11:23.9.0.25.07'
     runtimeOnly 'org.postgresql:postgresql'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
