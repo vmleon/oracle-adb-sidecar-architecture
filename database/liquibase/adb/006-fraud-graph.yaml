@@ -99,22 +99,27 @@ databaseChangeLog:
               INSERT INTO transaction_edges VALUES (1002, 27, 33, 4500.00, TIMESTAMP '2026-04-15 10:30:00', 'WIRE');
               INSERT INTO transaction_edges VALUES (1003, 33, 21, 4500.00, TIMESTAMP '2026-04-15 12:00:00', 'WIRE');
 
-              -- Fan-out: account 24 (Jamal Reed, frozen) sends to 8 distinct accounts in 30 min
-              INSERT INTO transaction_edges VALUES (1010, 24, 3,  250.00, TIMESTAMP '2026-04-16 14:02:00', 'CARD');
-              INSERT INTO transaction_edges VALUES (1011, 24, 25, 280.00, TIMESTAMP '2026-04-16 14:05:00', 'CARD');
-              INSERT INTO transaction_edges VALUES (1012, 24, 30, 310.00, TIMESTAMP '2026-04-16 14:09:00', 'CARD');
-              INSERT INTO transaction_edges VALUES (1013, 24, 32, 200.00, TIMESTAMP '2026-04-16 14:13:00', 'CARD');
-              INSERT INTO transaction_edges VALUES (1014, 24, 36, 270.00, TIMESTAMP '2026-04-16 14:17:00', 'CARD');
-              INSERT INTO transaction_edges VALUES (1015, 24, 38, 320.00, TIMESTAMP '2026-04-16 14:21:00', 'CARD');
-              INSERT INTO transaction_edges VALUES (1016, 24, 28, 290.00, TIMESTAMP '2026-04-16 14:25:00', 'CARD');
-              INSERT INTO transaction_edges VALUES (1017, 24, 35, 240.00, TIMESTAMP '2026-04-16 14:29:00', 'CARD');
+              -- Fan-out: account 33 (Olu Adebayo, PENDING KYC, MEDIUM risk, NG —
+              -- money-mule profile) sends to 8 distinct accounts in 30 min.
+              -- Account 33 also appears in the cycle pattern → "this is the mule".
+              INSERT INTO transaction_edges VALUES (1010, 33, 3,  250.00, TIMESTAMP '2026-04-16 14:02:00', 'CARD');
+              INSERT INTO transaction_edges VALUES (1011, 33, 25, 280.00, TIMESTAMP '2026-04-16 14:05:00', 'CARD');
+              INSERT INTO transaction_edges VALUES (1012, 33, 30, 310.00, TIMESTAMP '2026-04-16 14:09:00', 'CARD');
+              INSERT INTO transaction_edges VALUES (1013, 33, 32, 200.00, TIMESTAMP '2026-04-16 14:13:00', 'CARD');
+              INSERT INTO transaction_edges VALUES (1014, 33, 36, 270.00, TIMESTAMP '2026-04-16 14:17:00', 'CARD');
+              INSERT INTO transaction_edges VALUES (1015, 33, 38, 320.00, TIMESTAMP '2026-04-16 14:21:00', 'CARD');
+              INSERT INTO transaction_edges VALUES (1016, 33, 28, 290.00, TIMESTAMP '2026-04-16 14:25:00', 'CARD');
+              INSERT INTO transaction_edges VALUES (1017, 33, 35, 240.00, TIMESTAMP '2026-04-16 14:29:00', 'CARD');
 
-              -- Structuring: account 22 (Bob Chen credit) → 35, multiple sub-$10K transfers
-              INSERT INTO transaction_edges VALUES (1020, 22, 35, 9500.00, TIMESTAMP '2026-04-09 09:14:00', 'WIRE');
-              INSERT INTO transaction_edges VALUES (1021, 22, 35, 9700.00, TIMESTAMP '2026-04-10 10:22:00', 'WIRE');
-              INSERT INTO transaction_edges VALUES (1022, 22, 35, 9800.00, TIMESTAMP '2026-04-12 14:08:00', 'WIRE');
-              INSERT INTO transaction_edges VALUES (1023, 22, 35, 9550.00, TIMESTAMP '2026-04-14 11:46:00', 'WIRE');
-              INSERT INTO transaction_edges VALUES (1024, 22, 35, 9400.00, TIMESTAMP '2026-04-15 13:00:00', 'WIRE');
+              -- Structuring: account 1 (Alice Morgan, HIGH risk, EXPIRED KYC) → 35,
+              -- multiple sub-$10K wires. Same customer also drives the cash-deposit
+              -- structuring (R-AML-002) on the production transactions table — the
+              -- /risk rule view and the /fraud graph view both flag her.
+              INSERT INTO transaction_edges VALUES (1020, 1, 35, 9500.00, TIMESTAMP '2026-04-09 09:14:00', 'WIRE');
+              INSERT INTO transaction_edges VALUES (1021, 1, 35, 9700.00, TIMESTAMP '2026-04-10 10:22:00', 'WIRE');
+              INSERT INTO transaction_edges VALUES (1022, 1, 35, 9800.00, TIMESTAMP '2026-04-12 14:08:00', 'WIRE');
+              INSERT INTO transaction_edges VALUES (1023, 1, 35, 9550.00, TIMESTAMP '2026-04-14 11:46:00', 'WIRE');
+              INSERT INTO transaction_edges VALUES (1024, 1, 35, 9400.00, TIMESTAMP '2026-04-15 13:00:00', 'WIRE');
 
               -- Baseline normal edges (so patterns don't match against an empty graph)
               INSERT INTO transaction_edges VALUES (1100, 1, 23, 200.00,  TIMESTAMP '2026-04-02 10:00:00', 'ACH');
