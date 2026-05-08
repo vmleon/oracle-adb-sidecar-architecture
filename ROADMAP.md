@@ -2,63 +2,17 @@
 
 Ordered low-hanging-fruit → most complex. Each item is self-contained
 unless flagged otherwise; sequencing reflects effort and blast radius,
-not dependency. The fraud dashboard (#7) is the one hard ordering
-constraint — it consumes the property graph (#6).
+not dependency. The fraud dashboard (#5) is the one hard ordering
+constraint — it consumes the property graph (#4).
 
 ---
 
-## 1. Fix `bootstrap.tftpl` cloud-init re-run bug
-
-`deploy/tf/modules/ops/userdata/bootstrap.tftpl` line 80 uses
-`cat <<EOT >>`, so a cloud-init re-run concatenates a second JSON
-object onto `/home/opc/ansible_params.json` and the Ansible
-parser dies. Change `>>` to `>` so the file is overwritten.
-
-Smallest possible task — one character — but it bites every time
-the ops bastion is reprovisioned.
-
-- Edit `deploy/tf/modules/ops/userdata/bootstrap.tftpl` line 80:
-  `cat <<EOT >>` → `cat <<EOT >`.
-- Verify on a fresh `terraform apply` of the ops module that the
-  resulting `ansible_params.json` parses cleanly on first and
-  second cloud-init pass.
-
-Workaround until the fix lands (run on ops):
-
-```bash
-python3 -c "import json; raw=open('/home/opc/ansible_params.json').read().lstrip(); obj,_=json.JSONDecoder().raw_decode(raw); open('/home/opc/ansible_params.json','w').write(json.dumps(obj,indent=2))"
-```
-
-## 2. Relabel simulated production engine as Oracle 19c in docs/diagrams
-
-The `databases` compute runs Oracle Database Free 26ai as the
-container for the "production" Oracle. There is no Oracle free-tier
-binary at 19c — Oracle's free lineage skipped from XE 21c straight
-to Free 23c+. To keep the demo narrative aligned with a realistic
-enterprise scenario, relabel the simulated production engine as
-**Oracle 19c** in README diagrams, the architecture table, and
-prose mentions; keep one discreet footnote noting that the actual
-container is 26ai Free because no free 19c image exists.
-
-Doc-only — no code, no infra, no Liquibase. Bubbled up because the
-mismatch between the demo narrative and the diagrams is paper-cut
-visible the moment anyone opens the README.
-
-- Edit the four diagram / table references in `README.md`
-  (current-system flowchart, agents flowchart, architecture
-  table, network diagram).
-- Update prose mentions of "Oracle Free 26ai" that refer to the
-  simulated production engine — but **not** mentions of
-  Autonomous Database 26ai (the AI sidecar), which stays 26ai.
-- Add one discreet footnote / italic note explaining the cut-corner.
-
-## 3. Blockchain tables for `transactions`
+## 1. Blockchain tables for `transactions`
 
 `transactions` is the OLTP source of truth on the simulated
-production Oracle (see #2 for what "production" maps to in this
-repo). The ledger belongs there, next to the source — not on ADB.
-Convert the table to a blockchain table so it becomes tamper-evident
-by configuration, with no app changes.
+production Oracle (Oracle 19c). The ledger belongs there, next to
+the source — not on ADB. Convert the table to a blockchain table so
+it becomes tamper-evident by configuration, with no app changes.
 
 **Why blockchain over immutable.** Blockchain adds row-level hash
 chaining (SHA2-512) and `DBMS_BLOCKCHAIN_TABLE.VERIFY_ROWS`, which
@@ -96,7 +50,7 @@ DAYS IDLE ...` initially, so the table can be dropped and
 Fallback: `CREATE IMMUTABLE TABLE` only if the chosen Oracle binary
 ships without blockchain support (rare on modern 19c / 26ai).
 
-## 4. Layer-4 RAG track for `COMPLIANCE_OFFICER`
+## 2. Layer-4 RAG track for `COMPLIANCE_OFFICER`
 
 Add a `BANKING_RAG` profile + `BANKING_POLICY_INDEX` vector index +
 `COMPLIANCE_RAG_TOOL`, wired into `COMPLIANCE_OFFICER` alongside
@@ -107,7 +61,7 @@ surface — no new endpoints, no separate semantic-search API.
 - Decide embedding source: ADB built-in models vs an external
   call. Default to in-database to keep the demo offline-capable.
 
-## 5. Swap HikariCP for Oracle UCP via the Spring Boot starter
+## 3. Swap HikariCP for Oracle UCP via the Spring Boot starter
 
 Backend currently runs on Spring Boot's default pool (HikariCP).
 Switch to Oracle's Universal Connection Pool through the official
@@ -124,7 +78,7 @@ label-based borrowing, built-in instrumentation.
 - Verify `/actuator/metrics` exposes `oracle.ucp.*` gauges and that
   `/api/v1/diag/agents/sanity` still completes within the same envelope.
 
-## 6. Fraud detection with SQL Property Graph
+## 4. Fraud detection with SQL Property Graph
 
 New domain on top of what's there. Build a property graph in 26ai
 over `accounts` (vertices) and `transactions` (edges) to express
@@ -147,9 +101,9 @@ VERTEX TABLES (accounts ...) EDGE TABLES (transactions SOURCE KEY
   place). Default to the production side unless the agent layer
   needs to query it directly.
 
-## 7. Fraud-detection dashboard
+## 5. Fraud-detection dashboard
 
-Companion to `/risk`, sequenced **after #6** since this is the
+Companion to `/risk`, sequenced **after #4** since this is the
 consumption surface for the graph queries. Add a second dashboard
 page in the Angular frontend that visualises property-graph fraud
 results — one card per pattern (cycles, fan-out, structuring) with
@@ -161,7 +115,7 @@ Also reorganise the existing Risk Dashboard: items that are really
 move to the new fraud page; the Risk Dashboard keeps prudential /
 compliance signals (limits, breaches, policy violations).
 
-## 8. Active Data Guard standby as federation source
+## 6. Active Data Guard standby as federation source
 
 Architecturally significant — real Oracle infra work. Stand up an
 ADG standby of the production Oracle, then point the federation
