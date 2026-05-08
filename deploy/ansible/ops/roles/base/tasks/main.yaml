@@ -28,11 +28,16 @@
 # yum_repository configures the repo but doesn't import the GPG key.
 # Modern dnf refuses to auto-import keys non-interactively, so without
 # this step the next dnf install fails with "Public key for
-# mongodb-mongosh-...rpm is not installed".
+# mongodb-mongosh-...rpm is not installed". Retries handle the transient
+# /var/lib/rpm/.rpm.lock contention right after the previous dnf op.
 - name: Import MongoDB GPG key
   ansible.builtin.rpm_key:
     state: present
     key: https://pgp.mongodb.com/server-8.0.asc
+  register: mongo_gpg_import
+  retries: 12
+  delay: 10
+  until: mongo_gpg_import is success
 
 - name: Install mongosh
   ansible.builtin.dnf:
