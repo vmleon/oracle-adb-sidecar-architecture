@@ -43,17 +43,14 @@ public class FraudController {
     // rolling 30-minute window. Real fraud detection uses sliding windows;
     // a lifetime distinct-counterparty count would flag normal payroll
     // accounts (50 employees over a year) as fraud.
+    //
+    // Implemented via a self-join (anchor edge t1; counterparties in
+    // (t1 - 30min, t1]) rather than COUNT(DISTINCT) OVER (...) because
+    // Oracle rejects DISTINCT analytic aggregates with a windowing clause
+    // and reports it as ORA-30487 "ORDER BY not allowed here".
     private static final String FANOUT_SQL = """
-            SELECT src_id   AS "srcId",
-                   src_name AS "srcName",
-                   MAX(rolling_distinct) AS "fanout"
-            FROM (
-              SELECT src_id, src_name,
-                     COUNT(DISTINCT dst_id) OVER (
-                       PARTITION BY src_id
-                       ORDER BY occurred_at
-                       RANGE BETWEEN INTERVAL '30' MINUTE PRECEDING AND CURRENT ROW
-                     ) AS rolling_distinct
+            WITH edges AS (
+              SELECT src_id, src_name, dst_id, occurred_at
               FROM GRAPH_TABLE (banking_graph
                 MATCH (a) -[t]-> (b)
                 COLUMNS (
@@ -63,9 +60,23 @@ public class FraudController {
                   t.occurred_at   AS occurred_at
                 )
               )
+            ),
+            windows AS (
+              SELECT e1.src_id, e1.src_name,
+                     COUNT(DISTINCT e2.dst_id) AS rolling_distinct
+              FROM edges e1
+              JOIN edges e2
+                ON  e2.src_id = e1.src_id
+                AND e2.occurred_at >  e1.occurred_at - INTERVAL '30' MINUTE
+                AND e2.occurred_at <= e1.occurred_at
+              GROUP BY e1.src_id, e1.src_name, e1.occurred_at
             )
-            WHERE rolling_distinct >= 5
-            GROUP BY src_id, src_name
+            SELECT src_id        AS "srcId",
+                   MIN(src_name) AS "srcName",
+                   MAX(rolling_distinct) AS "fanout"
+            FROM windows
+            GROUP BY src_id
+            HAVING MAX(rolling_distinct) >= 5
             ORDER BY MAX(rolling_distinct) DESC
             """;
 
