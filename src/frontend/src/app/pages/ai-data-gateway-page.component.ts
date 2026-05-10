@@ -12,14 +12,15 @@ interface Entry {
 }
 
 @Component({
-  selector: 'app-sidecar-page',
+  selector: 'app-ai-data-gateway-page',
   imports: [CardComponent],
   template: `
-    <h2>ADB 26ai sidecar (federated)</h2>
+    <h2>AI Data Gateway (federated)</h2>
     <p class="subtitle">
-      The backend issues one JDBC query per table to the ADB 26ai sidecar.
-      ADB resolves the V_* views through DB_LINK into Oracle Free and Postgres.
-      Your production databases are unchanged; 26ai capabilities layer on top.
+      The backend issues one JDBC query per table to Autonomous AI Database 26ai.
+      ADB resolves the V_* views through DB_LINK into the Oracle Database Free 26ai
+      stand-in for Oracle 19c and into PostgreSQL. Your production databases are
+      unchanged; 26ai capabilities layer on top.
     </p>
 
     <button (click)="loadAll()" [disabled]="busy() || !ready()">
@@ -43,27 +44,31 @@ interface Entry {
     }
   `,
 })
-export class SidecarPageComponent {
+export class AiDataGatewayPageComponent {
   private readiness = inject(ReadinessService);
   constructor(private query: QueryService) {}
 
   busy = signal(false);
   ready = this.readiness.sidecarReady;
   buttonLabel = computed(() =>
-    this.busy() ? 'Loading…' : this.ready() ? 'Load banking data via ADB sidecar' : 'Waiting for ADB sidecar…'
+    this.busy()
+      ? 'Loading…'
+      : this.ready()
+        ? 'Load banking data via the AI Data Gateway'
+        : 'Waiting for the AI Data Gateway…'
   );
 
   entries: Entry[] = [
-    { label: 'Oracle Free 26ai — accounts',         table: 'accounts',        state: signal<CardState>({ kind: 'idle' }) },
-    { label: 'Oracle Free 26ai — transactions',     table: 'transactions',    state: signal<CardState>({ kind: 'idle' }) },
-    { label: 'PostgreSQL 18 — policies',            table: 'policies',        state: signal<CardState>({ kind: 'idle' }) },
-    { label: 'PostgreSQL 18 — rules',               table: 'rules',           state: signal<CardState>({ kind: 'idle' }) },
+    { label: 'Oracle Database Free 26ai — accounts',     table: 'accounts',     state: signal<CardState>({ kind: 'idle' }) },
+    { label: 'Oracle Database Free 26ai — transactions', table: 'transactions', state: signal<CardState>({ kind: 'idle' }) },
+    { label: 'PostgreSQL 18 — policies',                 table: 'policies',     state: signal<CardState>({ kind: 'idle' }) },
+    { label: 'PostgreSQL 18 — rules',                    table: 'rules',        state: signal<CardState>({ kind: 'idle' }) },
     {
       label: 'MongoDB 8 — support_tickets',
       table: 'support_tickets',
       state: signal<CardState>({
         kind: 'disabled',
-        reason: 'Not available via sidecar — ADB heterogeneous gateway bug, see docs.',
+        reason: 'Not available via the AI Data Gateway — heterogeneous gateway bug, see docs.',
       }),
       skip: true,
     },

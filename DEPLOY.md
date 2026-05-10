@@ -1,4 +1,4 @@
-# Deploying the ADB 26ai Sidecar demo
+# Deploying the Live AI Hub (AI Data Gateway) demo
 
 End-to-end provisioning, day-one verification, and cleanup. The README covers what the demo _is_; this file covers how to _stand it up_ on OCI.
 
@@ -48,7 +48,7 @@ Renders `deploy/tf/app/terraform.tfvars` from `.env`.
 python manage.py tf
 ```
 
-Provisions VCN, ADB 26ai, 4 computes, LB, Object Storage bucket, and 7-day pre-authenticated requests (PARs) for every artifact.
+Provisions VCN, Autonomous AI Database 26ai, 4 computes, LB, Object Storage bucket, and 7-day pre-authenticated requests (PARs) for every artifact.
 
 ```bash
 cd deploy/tf/app

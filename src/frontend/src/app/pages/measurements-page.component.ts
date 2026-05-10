@@ -97,7 +97,7 @@ function iqrTrim(values: number[]): number[] {
       </tbody>
     </table>
 
-    <h3>Box plots (direct vs federated per query)</h3>
+    <h3>Distribution of direct vs federated query runtime (ms)</h3>
     <div class="chart-wrap">
       <canvas baseChart
               [type]="boxChartType"

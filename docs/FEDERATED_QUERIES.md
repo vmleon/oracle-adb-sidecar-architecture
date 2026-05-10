@@ -1,7 +1,7 @@
-# Federated Queries from the ADB 26ai Sidecar
+# Federated Queries from the Autonomous AI Database 26ai AI Data Gateway
 
-How the ADB 26ai sidecar reaches the three simulated "production" databases
-in this POC:
+How the Autonomous AI Database 26ai AI Data Gateway reaches the three
+simulated "production" databases in this POC:
 
 - Oracle Database Free 26ai (homogeneous Oracle → Oracle)
 - PostgreSQL 18 (Oracle-managed heterogeneous gateway)
@@ -218,7 +218,7 @@ Docs:
 > ruled out. The `adb-002-view-support-tickets` Liquibase changeset has
 > been removed; `MONGO_CRED` and `MONGO_LINK` are still created so the
 > path can be re-tested against future ADB releases. The backend's
-> "Via ADB sidecar" endpoint surfaces a static "known limitation" note
+> "Via the AI Data Gateway" endpoint surfaces a static "known limitation" note
 > for MongoDB instead of attempting the doomed query.
 
 Also Oracle-managed heterogeneous, `db_type = 'mongodb'`, port 27017.

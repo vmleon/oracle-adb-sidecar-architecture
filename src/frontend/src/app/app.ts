@@ -10,7 +10,7 @@ import { StatusPillComponent } from './status-pill/status-pill.component';
     <header>
       <h1>
         <a routerLink="/risk">
-          <span class="oracle-red">Oracle</span> ADB Sidecar Architecture
+          <span class="oracle-red">Oracle</span> Live AI Hub using the AI Data Gateway
         </a>
       </h1>
       <app-status-pill />

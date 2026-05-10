@@ -2,14 +2,14 @@ import { Component, computed, inject } from '@angular/core';
 import { ComponentName, ComponentState, ReadinessService } from '../readiness.service';
 
 // Display order: Risk dashboard first (default landing page), then the
-// production data sources, then the ADB sidecar, and the Agents team last.
+// production data sources, then the AI Data Gateway, and the Agents team last.
 // The `rows` computed below iterates Object.keys in insertion order.
 const LABELS: Record<ComponentName, string> = {
   riskDashboard: 'Risk dashboard',
-  oracleFree: 'Oracle Free',
+  oracleFree: 'Oracle Database Free 26ai',
   postgres: 'PostgreSQL',
   mongo: 'MongoDB',
-  adb: 'ADB sidecar',
+  adb: 'AI Data Gateway',
   agentsTeam: 'Agents team',
 };
 

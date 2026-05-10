@@ -1,8 +1,8 @@
 # Implementation Notes
 
 **Date**: 2026-04-17
-**Architecture**: Autonomous Database 26ai attached as an **AI sidecar** to three production databases (Oracle Free 26ai / Postgres 18 / Mongo 8 running in podman on a single "databases" compute). Spring Boot backend, Angular frontend, ops bastion. The goal of the architecture is to bring 26ai features (Vector Search, Hybrid Vector Index, Select AI) to workloads that still run on older/other engines, via DB_LINK and federated queries — no rehost required. Apache Iceberg is also a target capability but requires a workload change — see gap #9.
-**Iteration 1 goal**: end-to-end banking-demo endpoint exposed by a single button, proving every datasource is wired — both directly and through the ADB sidecar via DB_LINK.
+**Architecture**: Autonomous AI Database 26ai attached as the **AI Data Gateway** (the Live AI Hub pattern) to three production databases (Oracle Database Free 26ai / Postgres 18 / Mongo 8 running in podman on a single "databases" compute). Spring Boot backend, Angular frontend, ops bastion. The goal of the architecture is to bring 26ai features (Vector Search, Hybrid Vector Index, Select AI Agent framework) to workloads that still run on older/other engines, via DB_LINK and federated queries — no rehost required. The pattern itself works against any Oracle AI Database (including 19c) minus the vector / RAG functionality. Apache Iceberg is also a target capability but requires a workload change — see gap #9.
+**Iteration 1 goal**: end-to-end banking-demo endpoint exposed by a single button, proving every datasource is wired — both directly and through the AI Data Gateway via DB_LINK.
 
 ## What this iteration ships
 
@@ -15,21 +15,21 @@
 
 ## Key changes vs. the previous (deleted) plan
 
-| Was                                                             | Now                                                                                                                     |
-| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Oracle 19c in one Podman container, on its own compute          | ADB 26ai as **AI sidecar** next to 3 podman containers (Oracle Free 26ai / Postgres 18 / Mongo 8) simulating production |
-| Backend in Python Flask                                         | Spring Boot 3.5 / Java 23 (Gradle)                                                                                      |
-| No frontend                                                     | Angular 21 served by nginx                                                                                              |
-| 3 computes (ops/backend/db)                                     | 4 computes (ops/front/back/databases)                                                                                   |
-| terraform/ + ansible/ at repo root                              | both under `deploy/`                                                                                                    |
-| `stack.py`                                                      | `manage.py` (Click-based, 5 commands)                                                                                   |
-| Manual Oracle Container Registry login required (NOTES TODO #2) | Oracle **Database Free** image — no registry auth needed                                                                |
-| LB backend not registered (NOTES TODO #1)                       | LB backends explicit in `deploy/tf/app/lb.tf` for both front and back                                                   |
-| No schema management                                            | Liquibase YAML changelogs + mongosh init.js scaffolded                                                                  |
+| Was                                                             | Now                                                                                                                                                      |
+| --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Oracle 19c in one Podman container, on its own compute          | Autonomous AI Database 26ai as **AI Data Gateway** next to 3 podman containers (Oracle Database Free 26ai / Postgres 18 / Mongo 8) simulating production |
+| Backend in Python Flask                                         | Spring Boot 3.5 / Java 23 (Gradle)                                                                                                                       |
+| No frontend                                                     | Angular 21 served by nginx                                                                                                                               |
+| 3 computes (ops/backend/db)                                     | 4 computes (ops/front/back/databases)                                                                                                                    |
+| terraform/ + ansible/ at repo root                              | both under `deploy/`                                                                                                                                     |
+| `stack.py`                                                      | `manage.py` (Click-based, 5 commands)                                                                                                                    |
+| Manual Oracle Container Registry login required (NOTES TODO #2) | Oracle **Database Free** image — no registry auth needed                                                                                                 |
+| LB backend not registered (NOTES TODO #1)                       | LB backends explicit in `deploy/tf/app/lb.tf` for both front and back                                                                                    |
+| No schema management                                            | Liquibase YAML changelogs + mongosh init.js scaffolded                                                                                                   |
 
 ## Known gaps & deferred items
 
-### 1. ADB sidecar → production DBs (DB_LINK)
+### 1. AI Data Gateway → production DBs (DB_LINK)
 
 **Status**: wired in iteration 2.
 **How**: ADB now runs on a **private endpoint** in `db_subnet` (`modules/adbs/db.tf` via `subnet_id` + `nsg_ids`). The `nsg_adb` NSG (`deploy/tf/app/network.tf`) allows ingress on 1522 from the app and public subnets, and the `db_seclist` now allows the ADB private endpoint (same-subnet source) to reach Oracle/Postgres/Mongo on 1521/5432/27017.
@@ -75,11 +75,11 @@ Every object in `artifacts_*` is a Terraform-managed resource, so `terraform des
 ### 9. Apache Iceberg support — pursue alongside the AI workload
 
 **Status**: not enabled. We want it eventually, but it isn't available on the current workload.
-**Why**: per Oracle's docs ([Workload Types](https://docs.oracle.com/en/cloud/paas/autonomous-database/serverless/adbsb/about-autonomous-database-workloads.html), [Iceberg announcement](https://blogs.oracle.com/datawarehousing/post/iceberg-tables-autonomous-database)) Apache Iceberg querying — Native Iceberg + Unified Metadata Catalog + Data Lake Accelerator + GoldenGate→Iceberg streaming — is a **Lakehouse-workload** capability (the evolution of Autonomous Data Warehouse). The ADB module currently provisions `db_workload = "OLTP"` (Transaction Processing) in `deploy/tf/modules/adbs/variables.tf` because the headline value of the sidecar is Vector Search + Select AI federated against production data, both of which work on OLTP. Iceberg does not.
+**Why**: per Oracle's docs ([Workload Types](https://docs.oracle.com/en/cloud/paas/autonomous-database/serverless/adbsb/about-autonomous-database-workloads.html), [Iceberg announcement](https://blogs.oracle.com/datawarehousing/post/iceberg-tables-autonomous-database)) Apache Iceberg querying — Native Iceberg + Unified Metadata Catalog + Data Lake Accelerator + GoldenGate→Iceberg streaming — is a **Lakehouse-workload** capability (the evolution of Autonomous Data Warehouse). The ADB module currently provisions `db_workload = "OLTP"` (Transaction Processing) in `deploy/tf/modules/adbs/variables.tf` because the headline value of the AI Data Gateway is Vector Search + Select AI federated against production data, both of which work on OLTP. Iceberg does not.
 
 **Path forward**: a few credible options, each a follow-up iteration on its own:
 
-- **Switch to Lakehouse** (`db_workload = "DW"`). Single line. Loses fast-path OLTP characteristics — fine if the sidecar will only run analytical / federated / Iceberg workloads.
+- **Switch to Lakehouse** (`db_workload = "DW"`). Single line. Loses fast-path OLTP characteristics — fine if the AI Data Gateway will only run analytical / federated / Iceberg workloads.
 - **Add a second ADB instance** (`module "adbs_lake"` with `db_workload = "DW"`) alongside the OLTP one. Best of both: keep OLTP for Select AI / chat-style workloads, use the Lakehouse one for Iceberg + Data Lake Accelerator. Roughly doubles ADB cost.
 - **Wait for Oracle to extend Iceberg to OLTP** (no public roadmap commitment on this — track the Iceberg query reference page for changes).
 
@@ -103,7 +103,7 @@ If the listed `database_version` range does not cover 18 (postgres) or 8 (mongod
 
 **TODO — first line of work after the architecture is done:**
 
-Ship at least one real 26ai capability against federated production data — otherwise the sidecar story is indistinguishable from Oracle Database Gateway. Concrete minimum:
+Ship at least one real 26ai capability against federated production data — otherwise the AI Data Gateway story is indistinguishable from Oracle Database Gateway. Concrete minimum:
 
 - Create a Select AI profile on ADB (`DBMS_CLOUD_AI.CREATE_PROFILE`) that points at the federated banking views already created by `002-db-links.yaml` (`V_ACCOUNTS`, `V_TRANSACTIONS`, `V_POLICIES`, `V_RULES`, `V_SUPPORT_TICKETS`).
 - Add a third frontend page: free-text prompt → `/api/v1/select-ai` → `SELECT AI CHAT ...` on ADB → answer derived from live production-container data ("which customers hit any AML rule last week?").
@@ -114,13 +114,13 @@ Until this ships, every reviewer will ask "so what does 26ai actually give me he
 **Iteration 2 (likely next):**
 
 - Wire `manage.py liquibase` for all four engines.
-- Add the ADB private endpoint + DB_LINK changeset so the ADB sidecar can query the production Oracle container federated.
+- Add the ADB private endpoint + DB_LINK changeset so the AI Data Gateway can query the production Oracle container federated.
 - A second frontend page that runs a federated query from ADB into the production Oracle.
 
 **Iteration 3:**
 
-- DBMS_CLOUD_LINK / heterogeneous DB_LINK from the ADB sidecar out to the production Postgres and Mongo.
-- Add Select AI profile creation on ADB (carried over from `oracle-database-select-ai`) so Select AI can be run against federated production data — the core value proposition of the sidecar pattern.
+- DBMS_CLOUD_LINK / heterogeneous DB_LINK from the AI Data Gateway out to the production Postgres and Mongo.
+- Add Select AI profile creation on ADB (carried over from `oracle-database-select-ai`) so Select AI can be run against federated production data — the core value proposition of the AI Data Gateway pattern.
 
 **Iteration 4:**
 

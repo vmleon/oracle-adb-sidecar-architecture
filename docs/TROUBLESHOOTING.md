@@ -49,12 +49,12 @@ something inside is wrong; move on to logs.
 The ops Ansible role pre-installs SQLcl, `psql`, and `mongosh`, and
 saves a working connection for each engine:
 
-| Database         | Command   | Behind the scenes                                          |
-| ---------------- | --------- | ---------------------------------------------------------- |
-| ADB 26ai sidecar | `adb`     | `sql -name adb` (SQLcl saved connection via wallet)        |
-| Oracle Free 26ai | `orafree` | `sql -name orafree` (SQLcl saved connection over JDBC URL) |
-| PostgreSQL 18    | `pg`      | `psql -h $DB -U postgres -d postgres` (reads `~/.pgpass`)  |
-| MongoDB 8        | `mg`      | `mongosh mongodb://admin:…@$DB:27017/admin`                |
+| Database                   | Command   | Behind the scenes                                          |
+| -------------------------- | --------- | ---------------------------------------------------------- |
+| AI Data Gateway (ADB 26ai) | `adb`     | `sql -name adb` (SQLcl saved connection via wallet)        |
+| Oracle Free 26ai           | `orafree` | `sql -name orafree` (SQLcl saved connection over JDBC URL) |
+| PostgreSQL 18              | `pg`      | `psql -h $DB -U postgres -d postgres` (reads `~/.pgpass`)  |
+| MongoDB 8                  | `mg`      | `mongosh mongodb://admin:…@$DB:27017/admin`                |
 
 All four shortcuts live in `/home/opc/bin/` and are on `PATH` via
 `.bashrc`. Sanity queries once connected:
@@ -86,7 +86,7 @@ Cloud-init wrote the passwords to `/home/opc/ansible_params.json`
 jq -r .mongo_db_password    /home/opc/ansible_params.json
 jq -r .postgres_db_password /home/opc/ansible_params.json
 jq -r .oracle_db_password   /home/opc/ansible_params.json   # SYSTEM on Oracle Free
-jq -r .adb_admin_password   /home/opc/ansible_params.json   # ADMIN on ADB sidecar
+jq -r .adb_admin_password   /home/opc/ansible_params.json   # ADMIN on the AI Data Gateway (ADB)
 ```
 
 Mongo passwords often contain `#` / `@` / `/` — all reserved in a URI.

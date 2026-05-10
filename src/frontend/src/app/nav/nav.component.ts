@@ -11,7 +11,7 @@ import { RouterLink, RouterLinkActive } from '@angular/router';
         <a routerLink="/app" routerLinkActive="active">Current System</a>
       </div>
       <div class="right">
-        <a routerLink="/sidecar" routerLinkActive="active">ADB sidecar</a>
+        <a routerLink="/ai-data-gateway" routerLinkActive="active">AI Data Gateway</a>
         <a routerLink="/fraud" routerLinkActive="active">Fraud Dashboard</a>
         <a routerLink="/agents" routerLinkActive="active">AI Assistant</a>
         <a routerLink="/measurements" routerLinkActive="active">Measurements</a>

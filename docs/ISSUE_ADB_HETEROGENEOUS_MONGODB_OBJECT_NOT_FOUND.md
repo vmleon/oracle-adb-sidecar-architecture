@@ -250,7 +250,7 @@ same `object not found` response.
   the infrastructure in place for re-testing after any gateway update).
 - The `V_SUPPORT_TICKETS` changeset has been removed from Liquibase so
   deploys complete cleanly.
-- The backend's "Via ADB sidecar" endpoint surfaces a static
+- The backend's "Via the AI Data Gateway" endpoint surfaces a static
   "heterogeneous gateway limitation — see issue doc" note for MongoDB
   instead of a stack trace. Oracle Free and PostgreSQL federation
   (`V_ACCOUNTS`, `V_TRANSACTIONS`, `V_POLICIES`, `V_RULES`) are unaffected

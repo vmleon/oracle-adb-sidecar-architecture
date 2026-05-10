@@ -18,10 +18,13 @@ export const routes: Routes = [
       import('./pages/app-page.component').then((m) => m.AppPageComponent),
   },
   {
-    path: 'sidecar',
+    path: 'ai-data-gateway',
     loadComponent: () =>
-      import('./pages/sidecar-page.component').then((m) => m.SidecarPageComponent),
+      import('./pages/ai-data-gateway-page.component').then(
+        (m) => m.AiDataGatewayPageComponent,
+      ),
   },
+  { path: 'sidecar', redirectTo: 'ai-data-gateway', pathMatch: 'full' },
   {
     path: 'agents',
     loadComponent: () =>
