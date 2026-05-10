@@ -21,7 +21,7 @@ That timing matters. Fraud and intrusion attempts have gone AI-powered — synth
 ```mermaid
 flowchart LR
     classDef existing fill:#F5F2EE,stroke:#6B6560,color:#2C2723
-    classDef sidecar  fill:#FDF3F1,stroke:#C74634,color:#2C2723
+    classDef gateway  fill:#FDF3F1,stroke:#C74634,color:#2C2723
     classDef ai       fill:#FFF4DC,stroke:#A88040,color:#542
 
     subgraph current ["Current System — unchanged"]
@@ -35,9 +35,9 @@ flowchart LR
         app --> mongo
     end
 
-    subgraph sidecarbox ["AI Data Gateway — added alongside (Autonomous AI Database 26ai)"]
+    subgraph gatewaybox ["AI Data Gateway — added alongside (Autonomous AI Database 26ai)"]
         direction TB
-        adb[(Autonomous AI Database 26ai)]:::sidecar
+        adb[(Autonomous AI Database 26ai)]:::gateway
         agents[Select AI Agent framework<br/>multi-agent teams]:::ai
         nl2sql[Select AI NL2SQL<br/>V_BNK_* views]:::ai
         rag[Hybrid Vector Index<br/>policy-doc RAG]:::ai
@@ -56,7 +56,7 @@ The frontend ships six routes against a small banking demo dataset seeded on fir
 - `/risk` — **Risk Dashboard** (default landing). Reads only from the existing production databases; no AI Data Gateway involvement. Six KPI cards plus five charts (sub-CTR structuring watchlist, KYC pipeline, risk × account-status mix, ticket priority over time, and an active-rule-violations table). Each chart cites the policy and rule codes that drive it.
 - `/fraud` — **Fraud Dashboard.** Pattern-level fraud signals from a SQL Property Graph (`banking_graph`) on Autonomous AI Database 26ai plus the cross-border wire flows view. Four cards: round-trip cycles (A→B→C→A detected via `GRAPH_TABLE MATCH`), fan-out (single source → many destinations), structuring (sub-$10K transfers summing well over the CTR threshold), and the OFAC-flagged international wires that used to live on `/risk`. Each match comes with a deterministic risk score.
 - `/app` — **Current System.** The backend opens direct JDBC/Mongo connections to each production database. Proves every datasource is reachable; this is what your app already does today.
-- `/sidecar` — **AI Data Gateway path.** The backend queries Autonomous AI Database 26ai; ADB resolves `V_ACCOUNTS`, `V_TRANSACTIONS`, `V_POLICIES`, `V_RULES` over DB_LINK. Proves the federated path end-to-end. (MongoDB via the AI Data Gateway is deliberately disabled; see [docs/ISSUE_ADB_HETEROGENEOUS_MONGODB_OBJECT_NOT_FOUND.md](docs/ISSUE_ADB_HETEROGENEOUS_MONGODB_OBJECT_NOT_FOUND.md).)
+- `/ai-data-gateway` — **AI Data Gateway path.** The backend queries Autonomous AI Database 26ai; ADB resolves `V_ACCOUNTS`, `V_TRANSACTIONS`, `V_POLICIES`, `V_RULES` over DB_LINK. Proves the federated path end-to-end. (MongoDB via the AI Data Gateway is deliberately disabled; see [docs/ISSUE_ADB_HETEROGENEOUS_MONGODB_OBJECT_NOT_FOUND.md](docs/ISSUE_ADB_HETEROGENEOUS_MONGODB_OBJECT_NOT_FOUND.md).)
 - `/agents` — **Select AI Agent framework.** A four-agent banking investigation team running entirely inside Autonomous AI Database 26ai (`DBMS_CLOUD_AI_AGENT.RUN_TEAM`). One prompt fans out to a Transaction Analyst, a Compliance Officer (SQL + RAG over a policy-doc vector index), a Customer Care Liaison, and a Case Synthesiser; the page renders the final answer plus a per-task execution trace. See the "Select AI Agent framework" section below.
 - `/measurements` — **direct vs federated dashboard.** Wall-clock timing for every query, persisted asynchronously to Autonomous AI Database 26ai, with summary stats and a distribution chart so the "federated is slower — by how much?" question has a data answer.
 
@@ -87,7 +87,7 @@ Pattern-level fraud detection driven by Oracle's SQL Property Graph feature. A `
 
 Five cards, one per table (accounts, transactions, policies, rules, support_tickets), each with a wall-clock badge measured at the backend boundary. One click fans out into five parallel HTTP requests and each card fills in independently as its response returns.
 
-### `/sidecar` — federated via the AI Data Gateway
+### `/ai-data-gateway` — federated via the AI Data Gateway
 
 ![AI Data Gateway screenshot](images/federated.png)
 
@@ -207,7 +207,7 @@ flowchart TB
     end
 
     subgraph appnet [App subnet 10.0.2.0/24]
-        front["Front · nginx + Angular 21<br/>/risk · /app · /sidecar · /agents · /measurements"]
+        front["Front · nginx + Angular 21<br/>/risk · /app · /ai-data-gateway · /agents · /measurements"]
         back[Back<br/>Spring Boot 3.5 / Java 23]
     end
 

@@ -2,7 +2,7 @@ databaseChangeLog:
   # ----- 1. Network ACL: allow ADB to reach OCI GenAI + Object Storage -----
   - changeSet:
       id: adb-005-network-acl
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - sql:
             endDelimiter: "/"
@@ -20,7 +20,7 @@ databaseChangeLog:
   # ----- 2. OCI API key credential (drop+create for idempotency) -----
   - changeSet:
       id: adb-005-cred-oci-genai
-      author: adbsidecar
+      author: aidatagateway
       runOnChange: true
       changes:
         - sql:
@@ -42,7 +42,7 @@ databaseChangeLog:
   # ----- 3-7. Profiles -----
   - changeSet:
       id: adb-005-profile-txn
-      author: adbsidecar
+      author: aidatagateway
       runOnChange: true
       changes:
         - sql:
@@ -72,7 +72,7 @@ databaseChangeLog:
 
   - changeSet:
       id: adb-005-profile-compliance
-      author: adbsidecar
+      author: aidatagateway
       runOnChange: true
       changes:
         - sql:
@@ -100,7 +100,7 @@ databaseChangeLog:
 
   - changeSet:
       id: adb-005-profile-care
-      author: adbsidecar
+      author: aidatagateway
       runOnChange: true
       changes:
         # Initial object_list excludes V_BNK_SUPPORT_TICKETS until the
@@ -130,7 +130,7 @@ databaseChangeLog:
 
   - changeSet:
       id: adb-005-profile-rag
-      author: adbsidecar
+      author: aidatagateway
       runOnChange: true
       changes:
         - sql:
@@ -155,7 +155,7 @@ databaseChangeLog:
 
   - changeSet:
       id: adb-005-profile-chat
-      author: adbsidecar
+      author: aidatagateway
       runOnChange: true
       changes:
         - sql:
@@ -180,7 +180,7 @@ databaseChangeLog:
   # ----- 8. Vector index over the policy markdown bucket -----
   - changeSet:
       id: adb-005-vector-index
-      author: adbsidecar
+      author: aidatagateway
       runOnChange: true
       changes:
         - sql:
@@ -205,7 +205,7 @@ databaseChangeLog:
   # ----- 9. Tools (4): SQL × 3, RAG × 1 -----
   - changeSet:
       id: adb-005-tools
-      author: adbsidecar
+      author: aidatagateway
       runOnChange: true
       changes:
         - sql:
@@ -240,7 +240,7 @@ databaseChangeLog:
   # ----- 10. Agents (4) -----
   - changeSet:
       id: adb-005-agents
-      author: adbsidecar
+      author: aidatagateway
       runOnChange: true
       changes:
         - sql:
@@ -294,7 +294,7 @@ databaseChangeLog:
   # ----- 11. Tasks (4) -----
   - changeSet:
       id: adb-005-tasks
-      author: adbsidecar
+      author: aidatagateway
       runOnChange: true
       changes:
         - sql:
@@ -352,7 +352,7 @@ databaseChangeLog:
   # ----- 12. Team -----
   - changeSet:
       id: adb-005-team
-      author: adbsidecar
+      author: aidatagateway
       runOnChange: true
       changes:
         - sql:

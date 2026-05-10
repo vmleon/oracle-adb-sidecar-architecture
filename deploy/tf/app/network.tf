@@ -153,7 +153,7 @@ resource "oci_core_security_list" "app_seclist" {
 resource "oci_core_security_list" "db_seclist" {
   compartment_id = var.compartment_ocid
   vcn_id         = oci_core_virtual_network.vcn.id
-  display_name   = "DB Security List (sidecar containers + ADB ports)"
+  display_name   = "DB Security List (production-DB containers + AI Data Gateway ports)"
 
   # back -> Oracle container
   ingress_security_rules {

@@ -3,7 +3,7 @@ databaseChangeLog:
 
   - changeSet:
       id: adb-002-cred-orafree
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - sql:
             endDelimiter: "/"
@@ -28,7 +28,7 @@ databaseChangeLog:
 
   - changeSet:
       id: adb-002-link-orafree
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - sql:
             endDelimiter: "/"
@@ -59,7 +59,7 @@ databaseChangeLog:
 
   - changeSet:
       id: adb-002-view-accounts
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - sql:
             endDelimiter: "/"
@@ -75,7 +75,7 @@ databaseChangeLog:
 
   - changeSet:
       id: adb-002-view-transactions
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - sql:
             endDelimiter: "/"
@@ -98,7 +98,7 @@ databaseChangeLog:
 
   - changeSet:
       id: adb-002-cred-pg
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - sql:
             endDelimiter: "/"
@@ -123,7 +123,7 @@ databaseChangeLog:
 
   - changeSet:
       id: adb-002-link-pg
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - sql:
             endDelimiter: "/"
@@ -154,7 +154,7 @@ databaseChangeLog:
 
   - changeSet:
       id: adb-002-view-policies
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - sql:
             endDelimiter: "/"
@@ -169,7 +169,7 @@ databaseChangeLog:
 
   - changeSet:
       id: adb-002-view-rules
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - sql:
             endDelimiter: "/"
@@ -186,7 +186,7 @@ databaseChangeLog:
 
   - changeSet:
       id: adb-002-cred-mongo
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - sql:
             endDelimiter: "/"
@@ -211,7 +211,7 @@ databaseChangeLog:
 
   - changeSet:
       id: adb-002-link-mongo
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - sql:
             endDelimiter: "/"

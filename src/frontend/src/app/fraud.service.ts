@@ -1,4 +1,4 @@
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 
@@ -36,6 +36,9 @@ export interface CrossBorderRow {
 }
 
 export interface FraudPatterns {
+  from: string;
+  to: string;
+  loadedAt: string;
   cycles: CycleRow[];
   fanout: FanoutRow[];
   structuring: StructuringRow[];
@@ -46,7 +49,10 @@ export interface FraudPatterns {
 export class FraudService {
   private http = inject(HttpClient);
 
-  load(): Observable<FraudPatterns> {
-    return this.http.get<FraudPatterns>('/api/v1/fraud/patterns');
+  load(from?: string, to?: string): Observable<FraudPatterns> {
+    let params = new HttpParams();
+    if (from) params = params.set('from', from);
+    if (to) params = params.set('to', to);
+    return this.http.get<FraudPatterns>('/api/v1/fraud/patterns', { params });
   }
 }

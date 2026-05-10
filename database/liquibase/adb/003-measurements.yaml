@@ -1,7 +1,7 @@
 databaseChangeLog:
   - changeSet:
       id: adb-003-table-measurements
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - sql:
             endDelimiter: "/"
@@ -27,7 +27,7 @@ databaseChangeLog:
 
   - changeSet:
       id: adb-003-index-measurements
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - sql:
             sql: CREATE INDEX qm_lookup_ix ON query_measurements (query_id, route, measured_at DESC)

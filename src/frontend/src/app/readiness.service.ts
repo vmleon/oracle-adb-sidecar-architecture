@@ -31,7 +31,7 @@ export class ReadinessService {
   components = computed(() => this.snapshot().components);
 
   appReady = computed(() => this.allReady('oracleFree', 'postgres', 'mongo'));
-  sidecarReady = computed(() => this.allReady('adb', 'oracleFree', 'postgres'));
+  gatewayReady = computed(() => this.allReady('adb', 'oracleFree', 'postgres'));
   agentsReady = computed(() => this.allReady('adb', 'agentsTeam'));
   riskReady = computed(() => this.allReady('riskDashboard', 'oracleFree', 'postgres', 'mongo'));
 

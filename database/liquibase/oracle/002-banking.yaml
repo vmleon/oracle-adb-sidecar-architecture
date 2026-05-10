@@ -1,7 +1,7 @@
 databaseChangeLog:
   - changeSet:
       id: oracle-002-create-accounts
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - createTable:
             tableName: accounts
@@ -26,7 +26,7 @@ databaseChangeLog:
 
   - changeSet:
       id: oracle-002-create-transactions
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - sql:
             endDelimiter: "/"
@@ -60,7 +60,7 @@ databaseChangeLog:
 
   - changeSet:
       id: oracle-002-seed-accounts
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - insert:
             tableName: accounts
@@ -83,7 +83,7 @@ databaseChangeLog:
 
   - changeSet:
       id: oracle-002-seed-transactions
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - sql:
             splitStatements: true

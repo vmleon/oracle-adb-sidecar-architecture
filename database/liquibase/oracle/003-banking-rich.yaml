@@ -1,7 +1,7 @@
 databaseChangeLog:
   - changeSet:
       id: oracle-003-create-customers
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - createTable:
             tableName: customers
@@ -39,7 +39,7 @@ databaseChangeLog:
 
   - changeSet:
       id: oracle-003-customers-checks
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - sql:
             sql: |
@@ -52,7 +52,7 @@ databaseChangeLog:
 
   - changeSet:
       id: oracle-003-create-branches
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - createTable:
             tableName: branches
@@ -85,7 +85,7 @@ databaseChangeLog:
 
   - changeSet:
       id: oracle-003-alter-accounts
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - addColumn:
             tableName: accounts
@@ -99,7 +99,7 @@ databaseChangeLog:
 
   - changeSet:
       id: oracle-003-accounts-fks
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - addForeignKeyConstraint:
             constraintName: fk_accounts_customer
@@ -116,7 +116,7 @@ databaseChangeLog:
 
   - changeSet:
       id: oracle-003-seed-customers
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - sql:
             splitStatements: false
@@ -146,7 +146,7 @@ databaseChangeLog:
 
   - changeSet:
       id: oracle-003-seed-branches
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - sql:
             splitStatements: false
@@ -162,7 +162,7 @@ databaseChangeLog:
 
   - changeSet:
       id: oracle-003-backfill-existing-accounts
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - sql:
             splitStatements: true
@@ -174,7 +174,7 @@ databaseChangeLog:
 
   - changeSet:
       id: oracle-003-seed-accounts-new
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - sql:
             splitStatements: false
@@ -204,7 +204,7 @@ databaseChangeLog:
 
   - changeSet:
       id: oracle-003-seed-transactions-narratives
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - sql:
             splitStatements: true
@@ -243,7 +243,7 @@ databaseChangeLog:
 
   - changeSet:
       id: oracle-003-seed-transactions-routine
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - sql:
             splitStatements: true

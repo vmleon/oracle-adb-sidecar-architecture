@@ -1,9 +1,9 @@
 // Run with: mongosh "mongodb://admin:<pwd>@<host>:27017/admin" init.js
 //
 // MongoDB equivalent of the Liquibase deployment_marker — proves end-to-end
-// schema/data initialization works on the sidecar Mongo container.
+// schema/data initialization works on the AI Data Gateway's Mongo container.
 
-const target = db.getSiblingDB('adbsidecar');
+const target = db.getSiblingDB('aidatagateway');
 
 target.createCollection('deployment_marker');
 
@@ -12,7 +12,7 @@ target.deployment_marker.insertOne({
   createdAt: new Date(),
 });
 
-print('Mongo init.js complete. Collection: adbsidecar.deployment_marker');
+print('Mongo init.js complete. Collection: aidatagateway.deployment_marker');
 
 // Banking demo collection in a dedicated `banking` database — matches
 // MONGO_LINK's service_name. We avoid Mongo's `admin` database because

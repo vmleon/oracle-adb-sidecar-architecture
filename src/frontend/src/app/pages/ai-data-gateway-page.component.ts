@@ -49,7 +49,7 @@ export class AiDataGatewayPageComponent {
   constructor(private query: QueryService) {}
 
   busy = signal(false);
-  ready = this.readiness.sidecarReady;
+  ready = this.readiness.gatewayReady;
   buttonLabel = computed(() =>
     this.busy()
       ? 'Loading…'

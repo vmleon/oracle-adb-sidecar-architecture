@@ -77,7 +77,7 @@ After `terraform apply`, print the endpoints and SSH command:
 python manage.py info
 ```
 
-Open the load balancer IP in a browser and click through `/risk`, `/app`, `/sidecar`, `/agents`, and `/measurements`. The backend health check, for quick sanity:
+Open the load balancer IP in a browser and click through `/risk`, `/app`, `/ai-data-gateway`, `/agents`, and `/measurements`. The backend health check, for quick sanity:
 
 ```bash
 curl http://<lb_public_ip>/api/v1/health

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CLI for managing the ADB sidecar architecture deployment."""
+"""CLI for managing the Live AI Hub (AI Data Gateway) deployment."""
 
 import configparser
 import json
@@ -116,13 +116,13 @@ def _list_compartments(oci_config):
 
 @click.group()
 def cli():
-    """ADB Sidecar Architecture Manager."""
+    """Live AI Hub (AI Data Gateway) Manager."""
 
 
 @cli.command()
 def setup():
     """Interactive OCI configuration. Stores results in .env."""
-    console.print("[bold]ADB Sidecar Architecture — Setup[/bold]\n")
+    console.print("[bold]Live AI Hub (AI Data Gateway) — Setup[/bold]\n")
 
     profiles, oci_config_parser = _read_oci_config()
 
@@ -240,7 +240,7 @@ def setup():
 
     project_name = inquirer.text(
         message="Project name (used for OCI resource naming):",
-        default="adbsidecar",
+        default="aidatagateway",
     ).execute()
 
     adb_admin_password = _generate_password()

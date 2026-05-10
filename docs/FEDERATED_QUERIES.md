@@ -55,7 +55,7 @@ The full form is:
 ```
 
 For this project that resolves to e.g.
-`databasesadbsidecarxy.db.vcnadbsidecarxy.oraclevcn.com` (the `xy` is the
+`databasesaidatagatewayxy.db.vcnaidatagatewayxy.oraclevcn.com` (the `xy` is the
 random 2-char deploy ID). Terraform builds this string from locals and
 passes it down as `databases_fqdn`; Liquibase substitutes it into every
 `CREATE_DATABASE_LINK` call via the `${databases_fqdn}` parameter.
@@ -303,7 +303,7 @@ be parameterized from Jinja-rendered `liquibase.properties`. Skeleton:
 databaseChangeLog:
   - changeSet:
       id: adb-db-link-cred-orafree
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - sql:
             endDelimiter: "/"
@@ -320,7 +320,7 @@ databaseChangeLog:
 
   - changeSet:
       id: adb-db-link-orafree
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - sql:
             endDelimiter: "/"

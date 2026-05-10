@@ -24,7 +24,7 @@ variable "ssh_public_key" {
 
 variable "project_name" {
   type    = string
-  default = "adbsidecar"
+  default = "aidatagateway"
 }
 
 variable "instance_shape" {

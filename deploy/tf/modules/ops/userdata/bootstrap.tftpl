@@ -7,7 +7,7 @@
 set -euo pipefail
 
 LOCK=/home/opc/bootstrap.lock
-OK_SENTINEL=/var/lib/adbsidecar/bootstrap.ok
+OK_SENTINEL=/var/lib/aidatagateway/bootstrap.ok
 mkdir -p "$(dirname "$OK_SENTINEL")"
 touch "$LOCK"
 

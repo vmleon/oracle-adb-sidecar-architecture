@@ -2,7 +2,7 @@ databaseChangeLog:
   # ----- Oracle Free side (ORAFREE_LINK exists from 002-db-links.yaml) -----
   - changeSet:
       id: adb-004-view-bnk-customers
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - sql:
             endDelimiter: "/"
@@ -17,7 +17,7 @@ databaseChangeLog:
 
   - changeSet:
       id: adb-004-view-bnk-branches
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - sql:
             endDelimiter: "/"
@@ -32,7 +32,7 @@ databaseChangeLog:
 
   - changeSet:
       id: adb-004-view-bnk-accounts
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - sql:
             endDelimiter: "/"
@@ -47,7 +47,7 @@ databaseChangeLog:
 
   - changeSet:
       id: adb-004-view-bnk-transactions
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - sql:
             endDelimiter: "/"
@@ -64,7 +64,7 @@ databaseChangeLog:
   # ----- Postgres side (PG_LINK provisioned in 002-db-links.yaml) -----
   - changeSet:
       id: adb-004-view-bnk-policies
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - sql:
             endDelimiter: "/"
@@ -80,7 +80,7 @@ databaseChangeLog:
 
   - changeSet:
       id: adb-004-view-bnk-rules
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - sql:
             endDelimiter: "/"
@@ -107,7 +107,7 @@ databaseChangeLog:
   #
   # - changeSet:
   #     id: adb-004-view-support-tickets-deferred
-  #     author: adbsidecar
+  #     author: aidatagateway
   #     changes:
   #       - sql:
   #           endDelimiter: "/"

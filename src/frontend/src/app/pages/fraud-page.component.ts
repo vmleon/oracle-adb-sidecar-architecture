@@ -1,4 +1,5 @@
 import { Component, computed, effect, inject, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { ReadinessService } from '../readiness.service';
 import {
@@ -24,24 +25,42 @@ function countryName(code: string): string {
   return COUNTRY_NAMES[code] ?? code;
 }
 
+function ymd(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
 @Component({
   selector: 'app-fraud-page',
-  imports: [RouterLink],
+  imports: [FormsModule, RouterLink],
   template: `
     <h2>Fraud Dashboard</h2>
     <p class="subtitle">
-      Pattern-level fraud signals from the SQL Property Graph on ADB
+      Pattern-level fraud signals from the SQL Property Graph on
+      Autonomous AI Database 26ai
       (<code>banking_graph</code> over <code>local_accounts</code> ↔
       <code>transaction_edges</code>) plus cross-border wire flows from the
       production-side <a routerLink="/risk">risk view</a>.
     </p>
+
+    <div class="filters">
+      <label>From <input type="date" [(ngModel)]="fromInput" /></label>
+      <label>To <input type="date" [(ngModel)]="toInput" /></label>
+      <button (click)="apply()" [disabled]="loading() || !ready()">
+        {{ loading() ? 'Loading…' : 'Apply' }}
+      </button>
+      @if (patterns(); as p) {
+        <span class="loaded">
+          Loaded at {{ loadedTime() }} · window {{ p.from }} → {{ p.to }}
+        </span>
+      }
+    </div>
 
     @if (!ready() && !patterns()) {
       <section class="placeholder">
         <h3>Fraud Dashboard is bootstrapping</h3>
         <p>Waiting for ADB and the production databases. Auto-refreshes when ready.</p>
       </section>
-    } @else if (loading()) {
+    } @else if (loading() && !patterns()) {
       <p class="loading">Loading…</p>
     } @else if (error()) {
       <p class="error">Could not load: {{ error() }}</p>
@@ -221,6 +240,28 @@ function countryName(code: string): string {
     .placeholder h3 { margin: 0 0 0.4rem; font-size: 1.05rem; }
     .placeholder p { margin: 0; font-size: 0.9rem; line-height: 1.5; }
 
+    .filters {
+      display: flex; flex-wrap: wrap; gap: 0.75rem;
+      align-items: center; margin: 0 0 1.25rem;
+      padding: 0.6rem 0.75rem;
+      background: #FFFFFF;
+      border: 1px solid #E5E0DA;
+      border-radius: 6px;
+      font-size: 0.85rem;
+    }
+    .filters label { color: #4A453F; display: inline-flex; gap: 0.4rem; align-items: center; }
+    .filters input[type="date"] {
+      font: inherit; padding: 0.2rem 0.4rem;
+      border: 1px solid #C9C2BA; border-radius: 3px; background: #FFFFFF;
+    }
+    .filters button {
+      padding: 0.3rem 0.85rem; border-radius: 3px;
+      border: 1px solid #C74634; background: #C74634; color: #FFFFFF;
+      font: inherit; cursor: pointer;
+    }
+    .filters button:disabled { opacity: 0.6; cursor: not-allowed; }
+    .filters .loaded { color: #6B6560; margin-left: auto; font-variant-numeric: tabular-nums; }
+
     .card {
       background: #FFFFFF;
       border: 1px solid #E5E0DA;
@@ -292,6 +333,15 @@ export class FraudPageComponent {
   error = signal<string | null>(null);
   ready = this.readiness.riskReady;
 
+  fromInput = signal(this.defaultFrom());
+  toInput = signal(ymd(new Date()));
+
+  loadedTime = computed(() => {
+    const p = this.patterns();
+    if (!p) return '';
+    return new Date(p.loadedAt).toLocaleTimeString();
+  });
+
   crossBorder = computed<CrossBorderRow[]>(() =>
     this.patterns()?.crossBorderWires ?? [],
   );
@@ -302,19 +352,34 @@ export class FraudPageComponent {
     effect(() => {
       if (this.ready() && !this.fetched) {
         this.fetched = true;
-        this.loading.set(true);
-        this.fraud.load().subscribe({
-          next: (p) => {
-            this.patterns.set(p);
-            this.loading.set(false);
-          },
-          error: (e) => {
-            this.error.set(e?.message ?? 'request failed');
-            this.loading.set(false);
-          },
-        });
+        this.fetch(this.fromInput(), this.toInput());
       }
     });
+  }
+
+  apply(): void {
+    this.fetch(this.fromInput(), this.toInput());
+  }
+
+  private fetch(from: string, to: string): void {
+    this.loading.set(true);
+    this.error.set(null);
+    this.fraud.load(from, to).subscribe({
+      next: (p) => {
+        this.patterns.set(p);
+        this.loading.set(false);
+      },
+      error: (e) => {
+        this.error.set(e?.message ?? 'request failed');
+        this.loading.set(false);
+      },
+    });
+  }
+
+  private defaultFrom(): string {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    return ymd(d);
   }
 
   name(code: string): string {

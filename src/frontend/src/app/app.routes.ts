@@ -24,7 +24,6 @@ export const routes: Routes = [
         (m) => m.AiDataGatewayPageComponent,
       ),
   },
-  { path: 'sidecar', redirectTo: 'ai-data-gateway', pathMatch: 'full' },
   {
     path: 'agents',
     loadComponent: () =>

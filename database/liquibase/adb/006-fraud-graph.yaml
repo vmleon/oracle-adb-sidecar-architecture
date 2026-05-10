@@ -13,7 +13,7 @@ databaseChangeLog:
   # ----- 1. Local accounts vertex table -----
   - changeSet:
       id: adb-006-create-local-accounts
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - createTable:
             tableName: local_accounts
@@ -35,7 +35,7 @@ databaseChangeLog:
   # not refreshed automatically. The fraud demo uses small, stable IDs.
   - changeSet:
       id: adb-006-seed-local-accounts
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - sql:
             sql: |
@@ -46,7 +46,7 @@ databaseChangeLog:
   #         this is a graph-shaped projection seeded with fraud patterns) -----
   - changeSet:
       id: adb-006-create-transaction-edges
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - createTable:
             tableName: transaction_edges
@@ -88,7 +88,7 @@ databaseChangeLog:
   # ----- 3. Seed fraud-shaped patterns + baseline normal activity -----
   - changeSet:
       id: adb-006-seed-transaction-edges
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - sql:
             splitStatements: true
@@ -132,7 +132,7 @@ databaseChangeLog:
   # ----- 4. Property graph -----
   - changeSet:
       id: adb-006-property-graph
-      author: adbsidecar
+      author: aidatagateway
       runOnChange: true
       changes:
         - sql:

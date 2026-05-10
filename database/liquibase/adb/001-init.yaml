@@ -1,7 +1,7 @@
 databaseChangeLog:
   - changeSet:
       id: adb-001-create-deployment-marker
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - createTable:
             tableName: deployment_marker

@@ -1,7 +1,7 @@
 databaseChangeLog:
   - changeSet:
       id: postgres-003-alter-policies
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - addColumn:
             tableName: policies
@@ -12,7 +12,7 @@ databaseChangeLog:
 
   - changeSet:
       id: postgres-003-policies-code-unique
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - addUniqueConstraint:
             constraintName: uq_policies_code
@@ -21,7 +21,7 @@ databaseChangeLog:
 
   - changeSet:
       id: postgres-003-alter-rules
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - addColumn:
             tableName: rules
@@ -37,7 +37,7 @@ databaseChangeLog:
 
   - changeSet:
       id: postgres-003-rules-code-unique
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - addUniqueConstraint:
             constraintName: uq_rules_code
@@ -46,7 +46,7 @@ databaseChangeLog:
 
   - changeSet:
       id: postgres-003-backfill-policies
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - sql:
             splitStatements: true
@@ -57,7 +57,7 @@ databaseChangeLog:
 
   - changeSet:
       id: postgres-003-seed-policies-new
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - sql:
             splitStatements: false
@@ -73,14 +73,14 @@ databaseChangeLog:
 
   - changeSet:
       id: postgres-003-widen-rules-severity
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - sql:
             sql: ALTER TABLE rules ALTER COLUMN severity TYPE VARCHAR(16)
 
   - changeSet:
       id: postgres-003-backfill-rules
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - sql:
             splitStatements: true
@@ -94,7 +94,7 @@ databaseChangeLog:
 
   - changeSet:
       id: postgres-003-seed-rules-new
-      author: adbsidecar
+      author: aidatagateway
       changes:
         - sql:
             splitStatements: false
