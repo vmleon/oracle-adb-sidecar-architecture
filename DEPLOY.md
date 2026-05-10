@@ -54,9 +54,6 @@ Provisions VCN, Autonomous AI Database 26ai, 4 computes, LB, Object Storage buck
 cd deploy/tf/app
 terraform init
 terraform plan -out=tfplan
-```
-
-```bash
 terraform apply tfplan
 ```
 

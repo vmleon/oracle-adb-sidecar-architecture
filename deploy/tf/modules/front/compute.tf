@@ -44,7 +44,7 @@ resource "oci_core_instance" "instance" {
     assign_public_ip          = false
     display_name              = "front${var.project_name}${var.deploy_id}"
     assign_private_dns_record = true
-    hostname_label            = "front${var.project_name}${var.deploy_id}"
+    hostname_label            = "front${var.deploy_id}"
   }
 
   source_details {

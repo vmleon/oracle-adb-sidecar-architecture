@@ -70,7 +70,7 @@ resource "oci_core_instance" "instance" {
     assign_public_ip          = true
     display_name              = "ops${var.project_name}${var.deploy_id}"
     assign_private_dns_record = true
-    hostname_label            = "ops${var.project_name}${var.deploy_id}"
+    hostname_label            = "ops${var.deploy_id}"
   }
 
   source_details {

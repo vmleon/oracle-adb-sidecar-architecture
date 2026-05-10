@@ -55,9 +55,10 @@ The full form is:
 ```
 
 For this project that resolves to e.g.
-`databasesaidatagatewayxy.db.vcnaidatagatewayxy.oraclevcn.com` (the `xy` is the
-random 2-char deploy ID). Terraform builds this string from locals and
-passes it down as `databases_fqdn`; Liquibase substitutes it into every
+`databasesxy.db.vcnxy.oraclevcn.com` (the `xy` is the random 2-char
+deploy ID; the project name is omitted from DNS labels because OCI caps
+each at 15 chars). Terraform builds this string from locals and passes
+it down as `databases_fqdn`; Liquibase substitutes it into every
 `CREATE_DATABASE_LINK` call via the `${databases_fqdn}` parameter.
 
 ADB's private endpoint lives in the same VCN, so its DNS resolver sees
