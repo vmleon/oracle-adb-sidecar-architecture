@@ -83,7 +83,7 @@ const COORDINATION_HI_MIN = 60;
         <div *ngIf="turn.role === 'assistant' && turn.elapsedMillis" class="timing">
           <span class="badge ai">AI: {{ formatDuration(turn.elapsedMillis) }}</span>
           <div class="badge human pill" tabindex="0">
-            <span>Human team: ~{{ humanRange }} (hover for breakdown)</span>
+            <span>Human team: ~{{ humanRange }} (rough estimate — how long would it take yours?)</span>
             <div class="popup">
               <h4>Estimated effort for a small banking team</h4>
               <ul>

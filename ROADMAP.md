@@ -6,21 +6,7 @@ not dependency.
 
 ---
 
-## 1. Soften the AI Assistant "human team" estimate copy
-
-The AI Assistant page shows
-`Human team: ~2.8–5.5 hours (hover for breakdown)`. The
-"(hover for breakdown)" hint doesn't make it obvious that the
-range is a ballpark — and an audience will instinctively
-compare it to their own org.
-
-- Reword so it's clear this is a rough estimate that will
-  differ per team. Example phrasing: "Human team: ~2.8–5.5
-  hours (rough estimate — how long would it take yours?)".
-- Keep the hover-for-breakdown affordance, just don't make it
-  the parenthetical.
-
-## 2. PRESENTATION.md — consolidated deck content
+## 1. PRESENTATION.md — consolidated deck content
 
 Single source of truth for the future PowerPoint deck. The file
 captures what each slide needs to say, in the order it'll be
@@ -39,7 +25,7 @@ presented, so the slides can be assembled directly from it.
   Data Gateway, Property Graph, Blockchain tables (ledger), and
   how each maps to a concrete slide / live screen in the demo.
 
-## 3. Dynamic dashboard filtering — remaining work
+## 2. Dynamic dashboard filtering — remaining work
 
 The Fraud Dashboard date-range filter and "loaded at" stamp already
 shipped; what's still ahead:
@@ -58,7 +44,7 @@ shipped; what's still ahead:
 - Risk Dashboard: apply the same filter shell (date range + a couple
   of category toggles for rule violations / risk tier).
 
-## 4. GitHub repo move under `oracle-autonomous-database-samples/select-ai/ai-data-gateway`
+## 3. GitHub repo move under `oracle-autonomous-database-samples/select-ai/ai-data-gateway`
 
 Per Mark's suggestion the canonical home is a subfolder of
 `oracle-autonomous-database-samples/select-ai/` named
@@ -73,7 +59,7 @@ item tracks the repo-side prep.
   `vmleon/oracle-adb-sidecar-architecture` repo: archive with a
   pointer in the README, or leave as a frozen mirror.
 
-## 5. Active Data Guard standby as federation source
+## 4. Active Data Guard standby as federation source
 
 Architecturally significant — real Oracle infra work. Stand up
 an ADG standby of the production Oracle, then point the
