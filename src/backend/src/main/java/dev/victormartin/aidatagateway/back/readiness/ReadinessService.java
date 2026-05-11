@@ -63,6 +63,16 @@ public class ReadinessService {
             postgresJdbc.queryForObject("SELECT COUNT(*) FROM rules WHERE code IS NOT NULL", Integer.class);
             return true;
         }));
+        // /api/v1/fraud/patterns needs the banking_graph backing tables on ADB
+        // (Liquibase adb-006) and transactions.merchant_country on Oracle for
+        // the cross-border wire panel.
+        futures.put("fraudDashboard", runProbe(() -> {
+            adbJdbc.queryForObject("SELECT COUNT(*) FROM transaction_edges", Integer.class);
+            oracleJdbc.queryForObject(
+                    "SELECT COUNT(*) FROM transactions WHERE merchant_country IS NOT NULL",
+                    Integer.class);
+            return true;
+        }));
 
         Map<String, String> components = new LinkedHashMap<>();
         for (Map.Entry<String, CompletableFuture<Boolean>> e : futures.entrySet()) {

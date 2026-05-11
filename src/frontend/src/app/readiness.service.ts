@@ -2,7 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable, computed, inject, signal } from '@angular/core';
 
 export type ComponentState = 'ready' | 'bootstrapping' | 'error';
-export type ComponentName = 'adb' | 'oracleFree' | 'postgres' | 'mongo' | 'agentsTeam' | 'riskDashboard';
+export type ComponentName = 'adb' | 'oracleFree' | 'postgres' | 'mongo' | 'agentsTeam' | 'riskDashboard' | 'fraudDashboard';
 
 export interface ReadinessSnapshot {
   overall: ComponentState;
@@ -24,6 +24,7 @@ export class ReadinessService {
       mongo: 'bootstrapping',
       agentsTeam: 'bootstrapping',
       riskDashboard: 'bootstrapping',
+      fraudDashboard: 'bootstrapping',
     },
   });
 
@@ -34,6 +35,7 @@ export class ReadinessService {
   gatewayReady = computed(() => this.allReady('adb', 'oracleFree', 'postgres'));
   agentsReady = computed(() => this.allReady('adb', 'agentsTeam'));
   riskReady = computed(() => this.allReady('riskDashboard', 'oracleFree', 'postgres', 'mongo'));
+  fraudReady = computed(() => this.allReady('fraudDashboard', 'adb', 'oracleFree'));
 
   constructor() {
     this.poll();
@@ -48,6 +50,7 @@ export class ReadinessService {
         components: {
           adb: 'error', oracleFree: 'error', postgres: 'error',
           mongo: 'error', agentsTeam: 'error', riskDashboard: 'error',
+          fraudDashboard: 'error',
         },
       }),
     });

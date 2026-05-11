@@ -331,7 +331,7 @@ export class FraudPageComponent {
   patterns = signal<FraudPatterns | null>(null);
   loading = signal(false);
   error = signal<string | null>(null);
-  ready = this.readiness.riskReady;
+  ready = this.readiness.fraudReady;
 
   fromInput = signal(this.defaultFrom());
   toInput = signal(ymd(new Date()));

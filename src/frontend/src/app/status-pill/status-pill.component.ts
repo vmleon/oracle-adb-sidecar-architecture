@@ -6,6 +6,7 @@ import { ComponentName, ComponentState, ReadinessService } from '../readiness.se
 // The `rows` computed below iterates Object.keys in insertion order.
 const LABELS: Record<ComponentName, string> = {
   riskDashboard: 'Risk dashboard',
+  fraudDashboard: 'Fraud dashboard',
   oracleFree: 'Oracle Database Free 26ai',
   postgres: 'PostgreSQL',
   mongo: 'MongoDB',
