@@ -101,6 +101,15 @@ public class AgentsService {
     private static final String TEAM_EXISTS_SQL =
             "SELECT COUNT(*) FROM USER_AI_AGENT_TEAMS WHERE AGENT_TEAM_NAME = ? AND STATUS = 'ENABLED'";
 
+    // One transparent retry on the PG_LINK heterogeneous-gateway flap
+    // (mode A in docs/ISSUE_AI_AGENT_RUN_TEAM_PG_LINK_WEDGE.md). The
+    // gateway drops idle RPC connections at HS_IDLE_TIMEOUT (~5 min) and
+    // the very next call lands on a fresh worker. Without this retry,
+    // any user prompt that arrives in the few-hundred-ms window between
+    // a keep-warm flap and the gateway recovering surfaces ORA-28511.
+    private static final int RUN_TEAM_GATEWAY_RETRIES = 1;
+    private static final long RUN_TEAM_RETRY_DELAY_MS = 250L;
+
     private final JdbcTemplate jdbc;
     // Separate template with a 120 s query timeout for warm-up + keep-warm
     // RUN_TEAM calls. Without this, a single hung RUN_TEAM blocks Spring's
@@ -138,7 +147,7 @@ public class AgentsService {
         long t0 = System.currentTimeMillis();
         String answer;
         try {
-            answer = jdbc.queryForObject(RUN_TEAM_SQL, String.class, teamName, prompt, paramsJson);
+            answer = runTeamWithGatewayRetry(prompt, paramsJson, conversationId);
         } catch (RuntimeException e) {
             long failedMs = System.currentTimeMillis() - t0;
             String schedulerInfo = fetchLatestTeamSchedulerError();
@@ -165,6 +174,36 @@ public class AgentsService {
         }
 
         return new AgentRunResponse(prompt, answer, conversationId, elapsed, trace);
+    }
+
+    private String runTeamWithGatewayRetry(String prompt, String paramsJson, String conversationId) {
+        RuntimeException last = null;
+        for (int attempt = 0; attempt <= RUN_TEAM_GATEWAY_RETRIES; attempt++) {
+            try {
+                return jdbc.queryForObject(RUN_TEAM_SQL, String.class, teamName, prompt, paramsJson);
+            } catch (RuntimeException e) {
+                last = e;
+                if (attempt >= RUN_TEAM_GATEWAY_RETRIES || !isGatewayTransient(e)) throw e;
+                log.warn("event=run_team_retry conv={} team={} attempt={} cause=\"{}\"",
+                        conversationId, teamName, attempt + 1,
+                        abbrev(NestedExceptionUtils.getMostSpecificCause(e).getMessage(), 240));
+                try { Thread.sleep(RUN_TEAM_RETRY_DELAY_MS); } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw e;
+                }
+            }
+        }
+        throw last;
+    }
+
+    private static boolean isGatewayTransient(Throwable t) {
+        Throwable cur = t;
+        for (int depth = 0; cur != null && depth < 10; depth++, cur = cur.getCause()) {
+            String m = cur.getMessage();
+            if (m == null) continue;
+            if (m.contains("ORA-28511") || m.contains("ORA-28509") || m.contains("ORA-02063")) return true;
+        }
+        return false;
     }
 
     // Fire one throwaway RUN_TEAM call after the backend is up so the GenAI
