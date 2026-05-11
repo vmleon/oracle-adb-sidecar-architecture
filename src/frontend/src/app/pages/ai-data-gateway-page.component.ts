@@ -6,6 +6,7 @@ import { randomUuid } from '../uuid';
 
 interface Entry {
   label: string;
+  engine: string;
   table: Table;
   state: ReturnType<typeof signal<CardState>>;
   skip?: boolean;
@@ -29,7 +30,7 @@ interface Entry {
 
     <div class="grid">
       @for (e of entries; track e.table) {
-        <app-card [label]="e.label" [state]="e.state()" />
+        <app-card [label]="e.label" [engine]="e.engine" [state]="e.state()" />
       }
     </div>
   `,
@@ -59,12 +60,13 @@ export class AiDataGatewayPageComponent {
   );
 
   entries: Entry[] = [
-    { label: 'Oracle Database Free 26ai — accounts',     table: 'accounts',     state: signal<CardState>({ kind: 'idle' }) },
-    { label: 'Oracle Database Free 26ai — transactions', table: 'transactions', state: signal<CardState>({ kind: 'idle' }) },
-    { label: 'PostgreSQL 18 — policies',                 table: 'policies',     state: signal<CardState>({ kind: 'idle' }) },
-    { label: 'PostgreSQL 18 — rules',                    table: 'rules',        state: signal<CardState>({ kind: 'idle' }) },
+    { label: 'Accounts',     engine: 'Oracle Database', table: 'accounts',     state: signal<CardState>({ kind: 'idle' }) },
+    { label: 'Transactions', engine: 'Oracle Database', table: 'transactions', state: signal<CardState>({ kind: 'idle' }) },
+    { label: 'Policies',     engine: 'PostgreSQL',      table: 'policies',     state: signal<CardState>({ kind: 'idle' }) },
+    { label: 'Rules',        engine: 'PostgreSQL',      table: 'rules',        state: signal<CardState>({ kind: 'idle' }) },
     {
-      label: 'MongoDB 8 — support_tickets',
+      label: 'Support tickets',
+      engine: 'MongoDB',
       table: 'support_tickets',
       state: signal<CardState>({
         kind: 'disabled',

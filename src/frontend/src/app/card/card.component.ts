@@ -15,7 +15,12 @@ export type CardState =
   template: `
     <article class="card">
       <header class="card-head">
-        <h4>{{ label() }}</h4>
+        <h4>
+          {{ label() }}
+          @if (engine()) {
+            <span class="engine">({{ engine() }})</span>
+          }
+        </h4>
         @if (state().kind === 'success') {
           <div class="badges">
             <span class="badge">{{ totalRows() }} rows</span>
@@ -92,6 +97,14 @@ export type CardState =
       text-transform: uppercase;
       letter-spacing: 0.05em;
     }
+    .card-head h4 .engine {
+      color: #6B6560;
+      font-size: 0.7rem;
+      text-transform: none;
+      letter-spacing: normal;
+      font-weight: normal;
+      margin-left: 0.35rem;
+    }
     .badges { display: flex; gap: 0.35rem; flex-wrap: wrap; justify-content: flex-end; }
     .badge {
       font-size: 0.75rem;
@@ -137,6 +150,7 @@ export type CardState =
 })
 export class CardComponent {
   label = input.required<string>();
+  engine = input<string>('');
   state = input.required<CardState>();
 
   expanded = signal(false);

@@ -6,11 +6,11 @@ import { RouterLink, RouterLinkActive } from '@angular/router';
   imports: [RouterLink, RouterLinkActive],
   template: `
     <nav class="nav">
-      <div class="left">
+      <div class="group left">
         <a routerLink="/risk" routerLinkActive="active">Risk Dashboard</a>
         <a routerLink="/app" routerLinkActive="active">Current System</a>
       </div>
-      <div class="right">
+      <div class="group right">
         <a routerLink="/ai-data-gateway" routerLinkActive="active">AI Data Gateway</a>
         <a routerLink="/fraud" routerLinkActive="active">Fraud Dashboard</a>
         <a routerLink="/agents" routerLinkActive="active">AI Assistant</a>
@@ -27,9 +27,13 @@ import { RouterLink, RouterLinkActive } from '@angular/router';
       border-bottom: 1px solid #E5E0DA;
       margin-bottom: 1.5rem;
     }
-    .left, .right {
+    .group {
       display: flex;
-      gap: 0.75rem;
+      gap: 0.5rem;
+      padding: 0.35rem 0.5rem;
+      background: #F5F2EE;
+      border-radius: 6px;
+      box-shadow: 0 1px 2px rgba(44, 39, 35, 0.06);
     }
     .nav a {
       color: #2C2723;
