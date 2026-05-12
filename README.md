@@ -70,6 +70,8 @@ The dashboard is intentionally the human counterpart to `/agents`: the same patt
 
 ### `/fraud` — Fraud Dashboard
 
+![Fraud Dashboard screenshot](images/fraud.png)
+
 Pattern-level fraud detection driven by Oracle's SQL Property Graph feature. A `banking_graph` on Autonomous AI Database 26ai models accounts as vertices and a `transaction_edges` table as edges; the backend runs three `GRAPH_TABLE (banking_graph MATCH ...)` queries — one per pattern — and the dashboard renders the matches.
 
 **Four cards:**
