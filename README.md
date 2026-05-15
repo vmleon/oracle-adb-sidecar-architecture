@@ -115,6 +115,16 @@ both the final synthesised answer and a structured execution trace.
 | 3   | `CUSTOMER_CARE_LIAISON` | `BANKING_NL2SQL_CARE`       | `CARE_SQL_TOOL`                              | `V_BNK_CUSTOMERS` today; `V_BNK_SUPPORT_TICKETS` once the Mongo gateway is fixed                       |
 | 4   | `CASE_SYNTHESIZER`      | `BANKING_CHAT`              | (none — pure LLM reasoning)                  | The other agents' outputs                                                                              |
 
+**Select AI profiles — 5 in total** (all created in `database/liquibase/adb/005-select-ai-agents.yaml`, all using OCI Generative AI):
+
+| #   | Profile                     | Mode   | Attached to                                                                             | Used by                                        |
+| --- | --------------------------- | ------ | --------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| 1   | `BANKING_NL2SQL_TXN`        | NL2SQL | `V_BNK_CUSTOMERS/ACCOUNTS/TRANSACTIONS/BRANCHES`                                        | `TRANSACTION_ANALYST` via `TXN_SQL_TOOL`       |
+| 2   | `BANKING_NL2SQL_COMPLIANCE` | NL2SQL | `V_BNK_POLICIES`, `V_BNK_RULES`                                                         | `COMPLIANCE_OFFICER` via `COMPLIANCE_SQL_TOOL` |
+| 3   | `BANKING_NL2SQL_CARE`       | NL2SQL | `V_BNK_CUSTOMERS` (+ `V_BNK_SUPPORT_TICKETS` once Mongo gateway is fixed)               | `CUSTOMER_CARE_LIAISON` via `CARE_SQL_TOOL`    |
+| 4   | `BANKING_RAG`               | RAG    | `BANKING_POLICY_INDEX` (5 markdown policy docs in OCI Object Storage, chunked 1500/300) | `COMPLIANCE_OFFICER` via `COMPLIANCE_RAG_TOOL` |
+| 5   | `BANKING_CHAT`              | Chat   | (none — pure LLM)                                                                       | `CASE_SYNTHESIZER`                             |
+
 ```mermaid
 sequenceDiagram
     autonumber
