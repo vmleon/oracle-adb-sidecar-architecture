@@ -1,8 +1,16 @@
 ---
+# Retries handle transient /var/lib/rpm/.rpm.lock contention from
+# oracle-cloud-agent plugin reconciliation (the agent was just upgraded
+# by cloud-init's `dnf upgrade` and its plugins fire their own dnf
+# transactions on their own schedule).
 - name: Install JDK 23
   ansible.builtin.package:
     name: jdk-23
     update_cache: yes
+  register: jdk_install
+  retries: 12
+  delay: 10
+  until: jdk_install is success
 
 - name: Create back config directory
   ansible.builtin.file:

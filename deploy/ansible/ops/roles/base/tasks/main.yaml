@@ -1,4 +1,8 @@
 ---
+# Retries handle transient /var/lib/rpm/.rpm.lock contention from
+# oracle-cloud-agent plugin reconciliation (the agent was just upgraded
+# by cloud-init's `dnf upgrade` and its plugins fire their own dnf
+# transactions on their own schedule).
 - name: Install jump-host tools + JDK 23 + SQLcl + postgresql client + ncat + OCI CLI
   ansible.builtin.dnf:
     name:
@@ -15,6 +19,10 @@
       - sqlcl
       - postgresql
     update_cache: yes
+  register: jumphost_tools_install
+  retries: 12
+  delay: 10
+  until: jumphost_tools_install is success
 
 - name: Add MongoDB 8.0 yum repository (for mongosh)
   ansible.builtin.yum_repository:
@@ -43,6 +51,10 @@
   ansible.builtin.dnf:
     name: mongodb-mongosh
     update_cache: yes
+  register: mongosh_install
+  retries: 12
+  delay: 10
+  until: mongosh_install is success
 
 - name: Ensure /opt/liquibase exists
   ansible.builtin.file:

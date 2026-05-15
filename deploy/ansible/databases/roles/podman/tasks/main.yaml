@@ -1,10 +1,18 @@
 ---
+# Retries handle transient /var/lib/rpm/.rpm.lock contention from
+# oracle-cloud-agent plugin reconciliation (the agent was just upgraded
+# by cloud-init's `dnf upgrade` and its plugins fire their own dnf
+# transactions on their own schedule).
 - name: Install podman
   ansible.builtin.dnf:
     name:
       - podman
       - podman-docker
     update_cache: yes
+  register: podman_install
+  retries: 12
+  delay: 10
+  until: podman_install is success
 
 - name: Create persistent data directories
   ansible.builtin.file:
