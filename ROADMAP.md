@@ -17,8 +17,11 @@ presented, so the slides can be assembled directly from it.
   features on existing 19c estates while the 26ai upgrade is
   still in flight, and how the same architecture flips cleanly
   once 26ai lands.
-- Deployability story: Autonomous is the easy on-ramp, but the
-  same pieces run on-prem.
+- Deployability story: Autonomous is the easy on-ramp (managed
+  credentials, zero install), but the same Select AI + AI Proxy +
+  agent + vector pieces also ship in Oracle AI Database 26ai
+  on-prem — with a few cloud-only conveniences swapped for their
+  classic on-prem equivalents.
 - Domain framing: banking use-case is the demo, but the pattern
   ports to any industry — call out where to swap.
 - Technology callouts: Autonomous Database 26ai, Select AI, AI
