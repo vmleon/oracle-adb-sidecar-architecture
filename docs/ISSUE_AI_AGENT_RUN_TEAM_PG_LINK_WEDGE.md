@@ -129,11 +129,12 @@ might also work but has not been validated against this wedge.
 
 Distinguish wedge from cold reconnect by elapsed time:
 
-| Elapsed          | Meaning                                                                  |
-| ---------------- | ------------------------------------------------------------------------ |
-| 300–450 ms, fail | Mode B wedge                                                             |
-| 70–150 s, ok     | Cold reconnect after long idle (mode A surfacing through the agent path) |
-| 30–70 s, ok      | Normal warm path                                                         |
+| Elapsed          | Meaning                                                                                                                                                |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| < 100 ms, fail   | Parameter validation, not the gateway — e.g. ORA-20050, see [`ISSUE_AI_AGENT_RUN_TEAM_CONVERSATION_ID.md`](ISSUE_AI_AGENT_RUN_TEAM_CONVERSATION_ID.md) |
+| 300–450 ms, fail | Mode B wedge                                                                                                                                           |
+| 70–150 s, ok     | Cold reconnect after long idle (mode A surfacing through the agent path)                                                                               |
+| 30–70 s, ok      | Normal warm path                                                                                                                                       |
 
 Operational endpoints:
 

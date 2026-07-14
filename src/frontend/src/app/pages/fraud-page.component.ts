@@ -25,10 +25,6 @@ function countryName(code: string): string {
   return COUNTRY_NAMES[code] ?? code;
 }
 
-function ymd(d: Date): string {
-  return d.toISOString().slice(0, 10);
-}
-
 @Component({
   selector: 'app-fraud-page',
   imports: [FormsModule, RouterLink],
@@ -333,8 +329,11 @@ export class FraudPageComponent {
   error = signal<string | null>(null);
   ready = this.readiness.fraudReady;
 
-  fromInput = signal(this.defaultFrom());
-  toInput = signal(ymd(new Date()));
+  // Start empty so the first request omits from/to — the backend anchors
+  // the default window to the newest data and echoes it back, and the
+  // inputs sync to that echoed window once loaded.
+  fromInput = signal('');
+  toInput = signal('');
 
   loadedTime = computed(() => {
     const p = this.patterns();
@@ -367,6 +366,8 @@ export class FraudPageComponent {
     this.fraud.load(from, to).subscribe({
       next: (p) => {
         this.patterns.set(p);
+        this.fromInput.set(p.from);
+        this.toInput.set(p.to);
         this.loading.set(false);
       },
       error: (e) => {
@@ -374,12 +375,6 @@ export class FraudPageComponent {
         this.loading.set(false);
       },
     });
-  }
-
-  private defaultFrom(): string {
-    const d = new Date();
-    d.setDate(d.getDate() - 30);
-    return ymd(d);
   }
 
   name(code: string): string {

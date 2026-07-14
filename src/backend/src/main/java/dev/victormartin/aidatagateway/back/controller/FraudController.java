@@ -158,6 +158,15 @@ public class FraudController {
             ORDER BY SUM(ABS(t.amount)) DESC
             """;
 
+    // The demo datasets carry fixed seed timestamps, so a wall-clock
+    // "last 30 days" default drifts past the data and renders every panel
+    // empty. When the caller doesn't pick a window, anchor it to the
+    // newest transaction across both sources instead of today.
+    private static final String MAX_EDGE_TS_SQL =
+            "SELECT MAX(occurred_at) FROM transaction_edges";
+    private static final String MAX_TXN_TS_SQL =
+            "SELECT MAX(occurred_at) FROM transactions";
+
     private final JdbcTemplate adbJdbc;
     private final JdbcTemplate oracleJdbc;
 
@@ -172,9 +181,8 @@ public class FraudController {
     public Map<String, Object> patterns(
             @RequestParam(value = "from", required = false) String from,
             @RequestParam(value = "to", required = false) String to) {
-        LocalDate today = LocalDate.now();
-        LocalDate fromDate = from != null && !from.isBlank() ? LocalDate.parse(from) : today.minusDays(30);
-        LocalDate toDate = to != null && !to.isBlank() ? LocalDate.parse(to) : today;
+        LocalDate toDate = to != null && !to.isBlank() ? LocalDate.parse(to) : newestDataDate();
+        LocalDate fromDate = from != null && !from.isBlank() ? LocalDate.parse(from) : toDate.minusDays(30);
         LocalDateTime fromTs = fromDate.atStartOfDay();
         LocalDateTime toTs = toDate.atTime(LocalTime.MAX);
 
@@ -188,6 +196,23 @@ public class FraudController {
         body.put("structuring", scoreStructuring(adbJdbc.queryForList(STRUCTURING_SQL, fromTs, toTs)));
         body.put("crossBorderWires", crossBorderWires(fromTs, toTs));
         return body;
+    }
+
+    private LocalDate newestDataDate() {
+        LocalDateTime edges = maxTimestamp(adbJdbc, MAX_EDGE_TS_SQL);
+        LocalDateTime txns = maxTimestamp(oracleJdbc, MAX_TXN_TS_SQL);
+        LocalDateTime newest = edges == null ? txns
+                : txns == null ? edges
+                : edges.isAfter(txns) ? edges : txns;
+        return newest == null ? LocalDate.now() : newest.toLocalDate();
+    }
+
+    private static LocalDateTime maxTimestamp(JdbcTemplate jdbc, String sql) {
+        try {
+            return jdbc.queryForObject(sql, LocalDateTime.class);
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     private List<Map<String, Object>> crossBorderWires(LocalDateTime fromTs, LocalDateTime toTs) {

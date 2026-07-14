@@ -65,14 +65,42 @@ class AgentsServiceTest {
     }
 
     @Test
-    void runTeam_generates_conversation_id_when_absent() {
-        when(jdbc.queryForObject(anyString(), eq(String.class), any(), any(), any()))
+    void runTeam_creates_conversation_when_absent() {
+        when(jdbc.queryForObject(contains("CREATE_CONVERSATION"), eq(String.class)))
+                .thenReturn("CONV-NEW-1");
+        when(jdbc.queryForObject(contains("RUN_TEAM"), eq(String.class), any(), any(), any()))
                 .thenReturn("ok");
         when(jdbc.queryForObject(contains("TEAM_EXEC_ID"), eq(String.class), any()))
                 .thenReturn(null);
         AgentRunResponse resp = service.runTeam("Hi", null);
-        assertThat(resp.conversationId()).matches("[0-9a-f-]{36}");
+        assertThat(resp.conversationId()).isEqualTo("CONV-NEW-1");
         assertThat(resp.trace()).isNull();
+        verify(jdbc).queryForObject(
+                contains("DBMS_CLOUD_AI_AGENT.RUN_TEAM"),
+                eq(String.class),
+                eq("BANKING_INVESTIGATION_TEAM"),
+                eq("Hi"),
+                eq("{\"conversation_id\":\"CONV-NEW-1\"}"));
+    }
+
+    @Test
+    void runTeam_recreates_conversation_when_supplied_id_is_stale() {
+        when(jdbc.queryForObject(contains("RUN_TEAM"), eq(String.class), any(), any(), any()))
+                .thenThrow(new RuntimeException("ORA-20050: Conversation id=stale-id does not exist."))
+                .thenReturn("ok after recreate");
+        when(jdbc.queryForObject(contains("CREATE_CONVERSATION"), eq(String.class)))
+                .thenReturn("CONV-FRESH");
+        when(jdbc.queryForObject(contains("TEAM_EXEC_ID"), eq(String.class), any()))
+                .thenReturn(null);
+
+        AgentRunResponse resp = service.runTeam("Hello", "stale-id");
+
+        assertThat(resp.answer()).isEqualTo("ok after recreate");
+        assertThat(resp.conversationId()).isEqualTo("CONV-FRESH");
+        verify(jdbc).queryForObject(
+                contains("DBMS_CLOUD_AI_AGENT.RUN_TEAM"),
+                eq(String.class), any(), any(),
+                eq("{\"conversation_id\":\"CONV-FRESH\"}"));
     }
 
     @Test
@@ -89,6 +117,19 @@ class AgentsServiceTest {
 
         assertThat(resp.answer()).isEqualTo("ok after retry");
         verify(jdbc, times(2)).queryForObject(
+                contains("DBMS_CLOUD_AI_AGENT.RUN_TEAM"),
+                eq(String.class), any(), any(), any());
+    }
+
+    @Test
+    void runTeam_propagates_leaked_http_handle_error_without_retry() {
+        when(jdbc.queryForObject(contains("RUN_TEAM"), eq(String.class), any(), any(), any()))
+                .thenThrow(new RuntimeException(
+                        "ORA-20053: Job X_TASK_0 failed: ORA-20051: Task failed: ORA-20000: ORA-29270: too many open HTTP requests"));
+
+        assertThatThrownBy(() -> service.runTeam("Hello", "conv-poison"))
+                .hasMessageContaining("ORA-29270");
+        verify(jdbc, times(1)).queryForObject(
                 contains("DBMS_CLOUD_AI_AGENT.RUN_TEAM"),
                 eq(String.class), any(), any(), any());
     }

@@ -25,15 +25,23 @@ public class AgentsService {
     private static final String RUN_TEAM_SQL =
             "SELECT DBMS_CLOUD_AI_AGENT.RUN_TEAM(?, ?, ?) FROM DUAL";
 
-    // Conversation context column on USER_AI_AGENT_TASK_HISTORY. On the
-    // 23.26 build it is CONVERSATION_PARAMS (per docs). Older builds
-    // shipped the typo COVERSATION_PARAM; if you re-target an older
-    // build, flip this and PROMPT_HISTORY_SQL below.
+    // RUN_TEAM validates the conversation_id in params against the
+    // conversation catalog (USER_CLOUD_AI_CONVERSATIONS) and raises
+    // ORA-20050 for ids it has never seen. Every conversation therefore
+    // has to be created server-side first; the returned id is what flows
+    // back to the client for multi-turn follow-ups.
+    private static final String CREATE_CONVERSATION_SQL =
+            "SELECT DBMS_CLOUD_AI.CREATE_CONVERSATION('{\"title\":\"AI Data Gateway assistant\"}') FROM DUAL";
+
+    // USER_AI_AGENT_TEAM_HISTORY.CONVERSATION_ID holds the caller-supplied
+    // conversation id for each team run. (Task-level CONVERSATION_PARAMS
+    // holds internally generated per-task conversation ids and cannot be
+    // used to resolve the caller's conversation.)
     private static final String RESOLVE_EXEC_ID_SQL = """
             SELECT TEAM_EXEC_ID FROM (
-                SELECT DISTINCT TEAM_EXEC_ID, START_DATE
-                FROM USER_AI_AGENT_TASK_HISTORY
-                WHERE JSON_VALUE(CONVERSATION_PARAMS, '$.conversation_id') = ?
+                SELECT TEAM_EXEC_ID
+                FROM USER_AI_AGENT_TEAM_HISTORY
+                WHERE CONVERSATION_ID = ?
                 ORDER BY START_DATE DESC
             ) WHERE ROWNUM = 1
             """;
@@ -132,7 +140,13 @@ public class AgentsService {
                          @Value("${selectai.agents.keepwarm.enabled:true}") boolean keepWarmEnabled) {
         this.jdbc = jdbc;
         this.keepWarmJdbc = new JdbcTemplate(jdbc.getDataSource());
-        this.keepWarmJdbc.setQueryTimeout(120);
+        // Generous timeout: cancelling a RUN_TEAM mid-flight (ORA-01013)
+        // aborts DBMS_CLOUD between UTL_HTTP calls and leaks open HTTP
+        // handles in the pooled session; after ~5 leaks that session fails
+        // every RUN_TEAM with ORA-29270. RUN_TEAM legitimately runs 30-150 s
+        // under load, so the timeout only exists to unblock the scheduler
+        // thread from a truly hung call.
+        this.keepWarmJdbc.setQueryTimeout(300);
         this.teamName = teamName;
         this.warmUpEnabled = warmUpEnabled;
         this.keepWarmEnabled = keepWarmEnabled;
@@ -141,14 +155,25 @@ public class AgentsService {
     public AgentRunResponse runTeam(String prompt, String conversationIdOrNull) {
         String conversationId = conversationIdOrNull != null
                 ? conversationIdOrNull
-                : UUID.randomUUID().toString();
-        String paramsJson = "{\"conversation_id\":\"" + conversationId + "\"}";
+                : createConversation(jdbc);
 
         long t0 = System.currentTimeMillis();
         String answer;
         try {
-            answer = runTeamWithGatewayRetry(prompt, paramsJson, conversationId);
+            try {
+                answer = runTeamWithGatewayRetry(prompt, paramsJson(conversationId), conversationId);
+            } catch (RuntimeException e) {
+                // A client-supplied id can be stale (conversation dropped or
+                // past retention). Start a fresh conversation and answer
+                // without the old context rather than failing the request.
+                if (conversationIdOrNull == null || !isUnknownConversation(e)) throw e;
+                log.warn("event=run_team_stale_conversation conv={} team={} — creating a fresh conversation",
+                        conversationId, teamName);
+                conversationId = createConversation(jdbc);
+                answer = runTeamWithGatewayRetry(prompt, paramsJson(conversationId), conversationId);
+            }
         } catch (RuntimeException e) {
+            refreshAdbPoolIfPoisoned(e);
             long failedMs = System.currentTimeMillis() - t0;
             String schedulerInfo = fetchLatestTeamSchedulerError();
             log.error("event=run_team_failed conv={} team={} elapsed_ms={} ora=\"{}\" scheduler_additional_info=\"{}\"",
@@ -206,6 +231,62 @@ public class AgentsService {
         return false;
     }
 
+    private static boolean isUnknownConversation(Throwable t) {
+        return causeContains(t, "ORA-20050");
+    }
+
+    // ORA-01013: a cancelled RUN_TEAM just leaked open UTL_HTTP handles in
+    // its pooled session. ORA-29270: a session already carries >= 5 leaked
+    // handles and fails every RUN_TEAM it serves. Either way the affected
+    // connections are poison — refresh the pool so subsequent calls get
+    // fresh sessions instead of failing until the next backend restart.
+    private static boolean isSessionPoisoning(Throwable t) {
+        return causeContains(t, "ORA-29270") || causeContains(t, "ORA-01013");
+    }
+
+    private static boolean causeContains(Throwable t, String marker) {
+        Throwable cur = t;
+        for (int depth = 0; cur != null && depth < 10; depth++, cur = cur.getCause()) {
+            String m = cur.getMessage();
+            if (m != null && m.contains(marker)) return true;
+        }
+        return false;
+    }
+
+    private void refreshAdbPoolIfPoisoned(Throwable t) {
+        if (!isSessionPoisoning(t)) return;
+        try {
+            oracle.ucp.admin.UniversalConnectionPoolManagerImpl
+                    .getUniversalConnectionPoolManager()
+                    .refreshConnectionPool("adb-ucp");
+            log.warn("event=adb_pool_refreshed reason=leaked_utl_http_handles");
+        } catch (Exception e) {
+            log.warn("event=adb_pool_refresh_failed cause=\"{}\"", abbrev(e.getMessage(), 240));
+        }
+    }
+
+    private static String paramsJson(String conversationId) {
+        return "{\"conversation_id\":\"" + conversationId + "\"}";
+    }
+
+    private String createConversation(JdbcTemplate template) {
+        return template.queryForObject(CREATE_CONVERSATION_SQL, String.class);
+    }
+
+    // Warm-up and keep-warm share one long-lived conversation so the
+    // catalog doesn't accumulate a row per tick. Recreated on demand if
+    // it disappears (retention cleanup, manual DROP_CONVERSATION).
+    private volatile String keepWarmConversationId;
+
+    private String keepWarmConversation() {
+        String id = keepWarmConversationId;
+        if (id == null) {
+            id = createConversation(keepWarmJdbc);
+            keepWarmConversationId = id;
+        }
+        return id;
+    }
+
     // Fire one throwaway RUN_TEAM call after the backend is up so the GenAI
     // workers are warm before the first real user request. Polls in a
     // background thread until the team is ENABLED — the backend can boot
@@ -230,10 +311,8 @@ public class AgentsService {
                 if (count != null && count > 0) {
                     log.info("Warming up agents team {}...", teamName);
                     long t0 = System.currentTimeMillis();
-                    // Bare UUID — a prefixed conversation_id makes RUN_TEAM bubble "bad SQL grammar".
-                    String conv = UUID.randomUUID().toString();
-                    String params = "{\"conversation_id\":\"" + conv + "\"}";
-                    keepWarmJdbc.queryForObject(RUN_TEAM_SQL, String.class, teamName, "warm-up ping; reply with OK.", params);
+                    String conv = keepWarmConversation();
+                    keepWarmJdbc.queryForObject(RUN_TEAM_SQL, String.class, teamName, "warm-up ping; reply with OK.", paramsJson(conv));
                     log.info("Agents warm-up complete in {}ms", System.currentTimeMillis() - t0);
                     return;
                 }
@@ -264,12 +343,12 @@ public class AgentsService {
             Integer count = jdbc.queryForObject(TEAM_EXISTS_SQL, Integer.class, teamName);
             if (count == null || count == 0) return;
             long t0 = System.currentTimeMillis();
-            // Bare UUID — a prefixed conversation_id makes RUN_TEAM bubble "bad SQL grammar".
-            String conv = UUID.randomUUID().toString();
-            String params = "{\"conversation_id\":\"" + conv + "\"}";
-            keepWarmJdbc.queryForObject(RUN_TEAM_SQL, String.class, teamName, "keep-warm; reply with OK.", params);
+            String conv = keepWarmConversation();
+            keepWarmJdbc.queryForObject(RUN_TEAM_SQL, String.class, teamName, "keep-warm; reply with OK.", paramsJson(conv));
             log.debug("event=keepwarm_ok team={} conv={} elapsed_ms={}", teamName, conv, System.currentTimeMillis() - t0);
         } catch (Exception e) {
+            if (isUnknownConversation(e)) keepWarmConversationId = null;
+            refreshAdbPoolIfPoisoned(e);
             Throwable root = NestedExceptionUtils.getMostSpecificCause(e);
             log.warn("event=keepwarm_failed team={} cause=\"{}\"", teamName, abbrev(root.getMessage(), 240));
         }
