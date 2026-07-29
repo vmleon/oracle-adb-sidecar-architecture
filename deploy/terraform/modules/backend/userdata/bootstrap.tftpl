@@ -1,0 +1,96 @@
+#!/bin/bash
+set -e
+
+touch /home/opc/bootstrap.lock
+
+wait_for_dns() {
+  local host="yum.${region_name}.oci.oraclecloud.com"
+  local -i tries=0 max=150
+  until getent ahostsv4 "$host" >/dev/null 2>&1; do
+    tries=$((tries+1))
+    if [ $tries -ge $max ]; then
+      echo "FATAL: DNS for $host not ready after $((max*2))s" >&2
+      exit 1
+    fi
+    sleep 2
+  done
+  echo "DNS ready after $tries attempt(s): $host"
+}
+wait_for_dns
+
+wait_for_rpm_lock() {
+  local -i tries=0 max=60
+  while fuser /var/lib/rpm/.rpm.lock /var/lib/dnf/lock >/dev/null 2>&1; do
+    tries=$((tries+1))
+    if [ $tries -ge $max ]; then
+      echo "FATAL: rpm/dnf lock busy after $((max*5))s" >&2
+      exit 1
+    fi
+    sleep 5
+  done
+}
+wait_for_rpm_lock
+
+dnf upgrade -y
+dnf install oracle-epel-release-el9 -y
+dnf install ansible-core -y
+
+# ADB wallet
+curl -4 --fail -sS "${wallet_par_full_path}" -o /home/opc/wallet.zip.b64
+base64 -d /home/opc/wallet.zip.b64 > /home/opc/wallet.zip && rm -f /home/opc/wallet.zip.b64
+mkdir -p /home/opc/backend/wallet
+unzip /home/opc/wallet.zip -d /home/opc/backend/wallet && rm -f /home/opc/wallet.zip
+chown -R opc:opc /home/opc/backend/wallet
+
+# Ansible back artifact
+curl -4 --fail -sS "${ansible_backend_par_full_path}" -o /home/opc/ansible_backend.zip
+mkdir -p /home/opc/ansible_backend
+unzip /home/opc/ansible_backend.zip -d /home/opc/ansible_backend && rm -f /home/opc/ansible_backend.zip
+chown -R opc:opc /home/opc/ansible_backend
+
+# Backend JAR artifact
+curl -4 --fail -sS "${backend_jar_par_full_path}" -o /home/opc/backend_jar.zip
+mkdir -p /home/opc/backend
+unzip /home/opc/backend_jar.zip -d /home/opc/backend && rm -f /home/opc/backend_jar.zip
+chown -R opc:opc /home/opc/backend
+mkdir -p /home/opc/ansible_backend/roles/appstack/files
+cp -r /home/opc/backend/* /home/opc/ansible_backend/roles/appstack/files/
+
+cat <<EOT >> /home/opc/ansible_params.json
+{
+  "project_name": "${project_name}",
+  "region_name": "${region_name}",
+  "backend_dest_directory": "/home/opc/backend",
+  "backend_jar_file": "backend-1.0.0.jar",
+  "adb_service_name": "${adb_service_name}",
+  "adb_admin_password": "${adb_admin_password}",
+  "oracle_db_password": "${oracle_db_password}",
+  "postgres_db_password": "${postgres_db_password}",
+  "mongo_db_password": "${mongo_db_password}",
+  "databases_private_ip": "${databases_private_ip}"
+}
+EOT
+chown opc:opc /home/opc/ansible_params.json
+chmod 600 /home/opc/ansible_params.json
+
+cat <<EOT >> /home/opc/backend.ini
+[backend]
+localhost ansible_connection=local ansible_user=root
+
+[backend:vars]
+ansible_python_interpreter="/usr/bin/python3"
+EOT
+chown opc:opc /home/opc/backend.ini
+
+touch /home/opc/ansible-playbook.log
+chown opc:opc /home/opc/ansible-playbook.log
+
+ANSIBLE_PYTHON_INTERPRETER="/usr/bin/python3" \
+    ansible-galaxy collection install ansible.posix | tee -a /home/opc/ansible-playbook.log
+
+ANSIBLE_PYTHON_INTERPRETER="/usr/bin/python3" ansible-playbook \
+    -i /home/opc/backend.ini \
+    --extra-vars "@/home/opc/ansible_params.json" \
+    /home/opc/ansible_backend/server.yaml | tee -a /home/opc/ansible-playbook.log
+
+rm /home/opc/bootstrap.lock

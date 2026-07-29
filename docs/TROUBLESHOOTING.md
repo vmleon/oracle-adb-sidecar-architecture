@@ -1,6 +1,6 @@
 # Troubleshooting
 
-Diagnostic toolkit for the four tiers — ops, databases, back, front.
+Diagnostic toolkit for the four tiers — ops, databases, backend, frontend.
 Discovery commands first; recipes for non-obvious operations last.
 When something breaks, work top-down: probe from ops, hop to the
 relevant host, read the logs, inspect the rendered configs.
@@ -8,36 +8,36 @@ relevant host, read the logs, inspect the rendered configs.
 ## Getting onto ops
 
 ```bash
-python manage.py info        # prints ops public IP + the SSH command
+./manage.py status        # prints ops public IP + the SSH command
 ssh -i ~/.ssh/id_rsa opc@<ops_public_ip>
 ```
 
 The rest of this doc assumes a shell on ops. The `opc` shell sources
 `~/endpoints.env` on login, exporting the private IPs of the other
-tiers as `$BACK`, `$FRONT`, `$DB`.
+tiers as `$BACKEND`, `$FRONTEND`, `$DATABASES`.
 
 ## Probe everything from ops (no extra ssh)
 
 ```bash
-echo "back=$BACK front=$FRONT db=$DB"
+echo "back=$BACKEND front=$FRONTEND db=$DATABASES"
 
-# back tier
-curl -i http://$BACK:8080/actuator/health
-curl -i http://$BACK:8080/api/v1/health
-curl -i "http://$BACK:8080/api/v1/query?table=accounts&route=direct&runId=manual"
-curl -i "http://$BACK:8080/api/v1/query?table=accounts&route=federated&runId=manual"
+# backend tier
+curl -i http://$BACKEND:8080/actuator/health
+curl -i http://$BACKEND:8080/api/v1/health
+curl -i "http://$BACKEND:8080/api/v1/query?table=accounts&route=direct&runId=manual"
+curl -i "http://$BACKEND:8080/api/v1/query?table=accounts&route=federated&runId=manual"
 
-# front tier
-curl -sI http://$FRONT
-curl -s  http://$FRONT | head -40
+# frontend tier
+curl -sI http://$FRONTEND
+curl -s  http://$FRONTEND | head -40
 
 # databases tier (port-only — no auth needed to confirm reachability)
-nc -zv $DB 1521          # Oracle Free
-nc -zv $DB 5432          # Postgres
-nc -zv $DB 27017         # Mongo
+nc -zv $DATABASES 1521          # Oracle Free
+nc -zv $DATABASES 5432          # Postgres
+nc -zv $DATABASES 27017         # Mongo
 
 # load balancer (from your laptop, not ops)
-curl -i http://$(terraform -chdir=deploy/tf/app output -raw lb_public_ip)/api/v1/health
+curl -i http://$(terraform -chdir=deploy/terraform output -raw lb_public_ip)/api/v1/health
 ```
 
 `nc` failing with "no route to host" → firewall or routing.
@@ -53,8 +53,8 @@ saves a working connection for each engine:
 | -------------------------- | --------- | ---------------------------------------------------------- |
 | AI Data Gateway (ADB 26ai) | `adb`     | `sql -name adb` (SQLcl saved connection via wallet)        |
 | Oracle Free 26ai           | `orafree` | `sql -name orafree` (SQLcl saved connection over JDBC URL) |
-| PostgreSQL 18              | `pg`      | `psql -h $DB -U postgres -d postgres` (reads `~/.pgpass`)  |
-| MongoDB 8                  | `mg`      | `mongosh mongodb://admin:…@$DB:27017/admin`                |
+| PostgreSQL 18              | `pg`      | `psql -h $DATABASES -U postgres -d postgres` (reads `~/.pgpass`)  |
+| MongoDB 8                  | `mg`      | `mongosh mongodb://admin:…@$DATABASES:27017/admin`                |
 
 All four shortcuts live in `/home/opc/bin/` and are on `PATH` via
 `.bashrc`. Sanity queries once connected:
@@ -103,7 +103,7 @@ into the wrapper verbatim.
 
 ## Hop to a private-tier host
 
-ops is the only tier with a public IP; back/front/databases are
+ops is the only tier with a public IP; backend/frontend/databases are
 private. Hop via ops with agent forwarding:
 
 ```bash
@@ -111,16 +111,16 @@ private. Hop via ops with agent forwarding:
 ssh -A opc@<ops_public_ip>
 
 # then on ops
-ssh -o StrictHostKeyChecking=accept-new opc@$DB        # databases
-ssh -o StrictHostKeyChecking=accept-new opc@$BACK      # back
-ssh -o StrictHostKeyChecking=accept-new opc@$FRONT     # front
+ssh -o StrictHostKeyChecking=accept-new opc@$DATABASES        # databases
+ssh -o StrictHostKeyChecking=accept-new opc@$BACKEND      # backend
+ssh -o StrictHostKeyChecking=accept-new opc@$FRONTEND     # frontend
 
 # or single-hop from your laptop
 ssh -J opc@<ops_public_ip> opc@<private_ip>
 ```
 
 The same key is authorized on all hosts (see
-`deploy/tf/modules/*/compute.tf`), so no extra key copy is needed.
+`deploy/terraform/modules/*/compute.tf`), so no extra key copy is needed.
 
 ## Read logs
 
@@ -136,16 +136,16 @@ The same key is authorized on all hosts (see
 Unit names per tier:
 
 - **databases**: `oracle`, `postgres`, `mongo`
-- **back**: `back`
-- **front**: `nginx`
+- **backend**: `backend`
+- **frontend**: `nginx`
 - **ops**: no long-running service — ops just bootstraps and exits
 
 Quick service status:
 
 ```bash
 sudo systemctl status oracle postgres mongo --no-pager   # databases
-sudo systemctl status back --no-pager                    # back
-sudo systemctl status nginx --no-pager                   # front
+sudo systemctl status backend --no-pager                 # backend
+sudo systemctl status nginx --no-pager                   # frontend
 ```
 
 ## Inspect rendered configs and vars
@@ -154,15 +154,15 @@ When behaviour doesn't match your Terraform variables, read what
 cloud-init actually wrote:
 
 ```bash
-echo "back=$BACK front=$FRONT db=$DB"
+echo "back=$BACKEND front=$FRONTEND db=$DATABASES"
 cat  /home/opc/endpoints.env
 
 jq . /home/opc/ansible_params.json        # all rendered passwords + project vars
 ls   /home/opc/ops/wallet/                # ADB wallet (ops)
-cat  /home/opc/back/config/application.yaml   # back service config
+cat  /home/opc/backend/config/application.yaml   # backend service config
 
 sudo systemctl cat oracle                 # rendered systemd unit (databases)
-sudo systemctl cat back                   # back service unit
+sudo systemctl cat backend                # backend service unit
 ```
 
 ## Re-run ansible per tier
@@ -181,15 +181,15 @@ sudo ANSIBLE_PYTHON_INTERPRETER=/usr/bin/python3 ansible-playbook \
     -i /home/opc/databases.ini --extra-vars @/home/opc/ansible_params.json \
     /home/opc/ansible_databases/server.yaml
 
-# back
+# backend
 sudo ANSIBLE_PYTHON_INTERPRETER=/usr/bin/python3 ansible-playbook \
-    -i /home/opc/back.ini --extra-vars @/home/opc/ansible_params.json \
-    /home/opc/ansible_back/server.yaml
+    -i /home/opc/backend.ini --extra-vars @/home/opc/ansible_params.json \
+    /home/opc/ansible_backend/server.yaml
 
-# front
+# frontend
 sudo ANSIBLE_PYTHON_INTERPRETER=/usr/bin/python3 ansible-playbook \
-    -i /home/opc/front.ini --extra-vars @/home/opc/ansible_params.json \
-    /home/opc/ansible_front/server.yaml
+    -i /home/opc/frontend.ini --extra-vars @/home/opc/ansible_params.json \
+    /home/opc/ansible_frontend/server.yaml
 ```
 
 ## Re-run cloud-init bootstrap (when even ansible never ran)
@@ -215,10 +215,10 @@ from PG_LINK`. The backend ships an always-on keep-warm
 (`AgentsService.keepWarm()`, every 60 s) that prevents this.
 
 Quick health probes (run from your laptop against the public LB, or
-from ops against `$BACK:8080`):
+from ops against `$BACKEND:8080`):
 
 ```bash
-F=<front_ip from python manage.py info>
+F=<frontend_ip from ./manage.py status>
 
 # Agent end-to-end (expect ok=true; elapsed 30-70s normal, 70-150s on cold reconnect)
 curl -sS --max-time 120 http://$F/api/v1/diag/agents/sanity | jq .
@@ -236,13 +236,13 @@ keep-warm has stopped or never started. Check:
 - `curl http://$F/actuator/scheduledtasks` — should list
   `keepWarm` with `fixedDelay=60000`.
 - back log for `event=keepwarm_failed` — recent entries indicate why.
-- `selectai.agents.keepwarm.enabled` in `/home/opc/back/config/application.yaml`
-  on the back host — must be `true`.
+- `selectai.agents.keepwarm.enabled` in `/home/opc/backend/config/application.yaml`
+  on the backend host — must be `true`.
 
 Recovery if a wedge has already fired: ~10 min of idle clears it (the
 scheduler reaps the poisoned worker). Drop+recreate of the link or
 team does NOT recover. Full diagnosis in
-[`ISSUE_AI_AGENT_RUN_TEAM_PG_LINK_WEDGE.md`](./ISSUE_AI_AGENT_RUN_TEAM_PG_LINK_WEDGE.md).
+[`known-limitation-pg-link-gateway.md`](./known-limitation-pg-link-gateway.md).
 
 ## Federated query sanity SQL
 

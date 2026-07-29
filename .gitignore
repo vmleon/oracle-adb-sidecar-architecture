@@ -3,17 +3,16 @@
 *.tfvars
 !*.tfvars.j2
 
-# Terraform
-deploy/tf/**/.terraform/
-deploy/tf/**/.terraform.lock.hcl
-deploy/tf/**/terraform.tfstate
-deploy/tf/**/terraform.tfstate.backup
-deploy/tf/**/.terraform.tfstate.lock.info
-deploy/tf/**/tfplan
-deploy/tf/**/crash.log
-deploy/tf/**/crash.*.log
-deploy/tf/**/generated/
-deploy/tf/**/*.zip
+# Terraform (the dependency lock file IS committed for reproducible providers)
+deploy/terraform/**/.terraform/
+deploy/terraform/**/terraform.tfstate
+deploy/terraform/**/terraform.tfstate.backup
+deploy/terraform/**/.terraform.tfstate.lock.info
+deploy/terraform/**/tfplan
+deploy/terraform/**/crash.log
+deploy/terraform/**/crash.*.log
+deploy/terraform/**/generated/
+deploy/terraform/**/*.zip
 
 # Liquibase rendered configs
 database/liquibase/**/liquibase.properties
@@ -57,3 +56,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Browser automation session artifacts
+.playwright-mcp/

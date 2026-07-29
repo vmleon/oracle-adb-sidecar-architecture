@@ -1,100 +1,167 @@
-# Deploying the Live AI Hub (AI Data Gateway) demo
+# Deploy
 
-End-to-end provisioning, day-one verification, and cleanup. The README covers what the demo _is_; this file covers how to _stand it up_ on OCI.
+Zero to a running Live AI Hub on OCI. Every command runs from the repository
+root.
 
-## Prerequisites
+The stack is four compute instances (ops, frontend, backend, databases) plus an
+Autonomous AI Database 26ai, a load balancer, and an Object Storage bucket.
+Cloud-init pulls each instance's artifact through a pre-authenticated request
+and runs Ansible **locally** on that instance — there is no SSH between
+instances during provisioning. The ops instance additionally runs Liquibase
+against all four database engines.
 
-- OCI account with API key in `~/.oci/config`
-- Python 3.9+ (`pip install -r requirements.txt`)
-- Terraform 1.x
-- Java 23 (Temurin or Oracle JDK)
-- Node 22+, npm 10+
-- Gradle (one-time, to bootstrap the wrapper: `cd src/backend && gradle wrapper --gradle-version 8.13`)
-- An RSA SSH keypair (e.g. `~/.ssh/id_rsa` + `id_rsa.pub`)
+---
 
-## Provisioning flow
+## 1. Prerequisites
 
-> **First time only:** create the virtualenv and install Python dependencies.
+| Tool                      | Version | Notes                                              |
+| ------------------------- | ------- | -------------------------------------------------- |
+| OCI tenancy + compartment | —       | See "Tenancy prerequisites" below                  |
+| OCI CLI                   | current | `oci setup config` complete (`~/.oci/config`)      |
+| Terraform                 | ≥ 1.5   | `oracle/oci` provider (pulled automatically)       |
+| Java                      | 23      | Temurin or Oracle JDK — builds the Spring Boot jar |
+| Node / npm                | 22 / 10 | Builds the Angular dist                            |
+| Python                    | 3.10+   | `pip install -r requirements.txt`                  |
+| SSH keypair               | RSA     | e.g. `~/.ssh/id_rsa` + `id_rsa.pub`                |
+
+### Tenancy prerequisites
+
+The Autonomous AI Database authenticates to OCI Generative AI and Object
+Storage **as itself**, through a resource principal — no API key or private key
+is ever placed in Terraform variables, on an instance, or in the database. That
+requires two tenancy-level grants that Terraform does not create:
+
+1. A **dynamic group** matching the ADB, for example:
+
+   ```
+   ALL {resource.type = 'autonomousdatabase', resource.compartment.id = '<compartment-ocid>'}
+   ```
+
+2. A **policy** granting that dynamic group what the demo uses:
+
+   ```
+   allow dynamic-group <dg-name> to use generative-ai-family in compartment <genai-compartment>
+   allow dynamic-group <dg-name> to read objects in compartment <compartment> where target.bucket.name = 'banking-rag-docs'
+   ```
+
+Without these, the Select AI profiles are created but every call to them fails
+to authenticate, and the policy-doc vector index cannot read its source bucket.
+
+---
+
+## 2. Install the Python dependencies
 
 ```bash
-python -m venv venv
-```
-
-Activate the virtualenv (every new shell):
-
-```bash
-source venv/bin/activate
+python -m venv venv && source venv/bin/activate
 ```
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Interactive OCI config (profile, region, compartment, SSH key). Generates an Oracle-compliant DB password. Writes `.env`.
+---
+
+## 3. Configure
 
 ```bash
-python manage.py setup
+./manage.py setup
 ```
 
-Builds the Spring Boot jar (`./gradlew build -x test`) and the Angular dist (`npm install && npm run build`).
+Interactive. It reads `~/.oci/config` and lets you pick the profile and region
+from a list, and the compartment by **typing to fuzzy-search** the full,
+paginated set (same for the GenAI compartment). It then:
+
+- generates four Oracle-compliant passwords (ADB `ADMIN`, Oracle Free,
+  PostgreSQL, MongoDB),
+- writes them and your choices to `.env` (git-ignored),
+- renders `deploy/terraform/terraform.tfvars` (mode `0600`, git-ignored).
+
+Terraform authenticates as the `~/.oci/config` profile you picked — the tfvars
+file carries no key material. If a picker shows a plain numbered list instead of
+type-to-search, install the deps: `pip install -r requirements.txt` (InquirerPy).
+
+---
+
+## 4. Build the application artifacts
 
 ```bash
-python manage.py build
+./manage.py build
 ```
 
-Renders `deploy/tf/app/terraform.tfvars` from `.env`.
+Builds the Spring Boot jar (`./gradlew build -x test`) and the Angular dist
+(`npm install && npm run build`). Terraform uploads both to Object Storage as
+deployment artifacts, so this has to run before `provision`.
+
+---
+
+## 5. Provision
 
 ```bash
-python manage.py tf
+./manage.py provision
 ```
 
-Provisions VCN, Autonomous AI Database 26ai, 4 computes, LB, Object Storage bucket, and 7-day pre-authenticated requests (PARs) for every artifact.
+Runs `terraform init` (retrying on transient provider-registry failures) then
+`terraform apply` from `deploy/terraform`, so you review the plan and confirm at
+the prompt. It creates the VCN, the Autonomous AI Database 26ai, four compute
+instances, the load balancer, the Object Storage bucket, and a 7-day
+pre-authenticated request per artifact.
+
+Cloud-init then provisions each instance. Expect 15–20 minutes for
+`terraform apply`, plus several more before the ops instance finishes Liquibase.
+
+---
+
+## 6. Check the deployment
 
 ```bash
-cd deploy/tf/app
-terraform init
+./manage.py status
 ```
 
-```bash
-terraform plan -out=tfplan
-```
+Prints the load balancer IP, the demo endpoints, and the ops SSH command.
+Open the load balancer IP in a browser and click through `/risk`, `/fraud`,
+`/app`, `/ai-data-gateway`, `/agents`, and `/measurements`.
 
-```bash
-terraform apply tfplan
-```
-
-Cloud-init on each instance pulls its artifact via PAR and runs Ansible **locally** (no SSH between instances).
-
-Prints the LB public IP, ops SSH command, and the demo endpoint URL.
-
-```bash
-cd ../../..
-python manage.py info
-```
-
-## Verifying
-
-After `terraform apply`, print the endpoints and SSH command:
-
-```bash
-python manage.py info
-```
-
-Open the load balancer IP in a browser and click through `/risk`, `/app`, `/ai-data-gateway`, `/agents`, and `/measurements`. The backend health check, for quick sanity:
+The backend health check, for a quick sanity read:
 
 ```bash
 curl http://<lb_public_ip>/api/v1/health
 ```
 
-## Cleanup
+Bootstrap on ops succeeded when `/var/lib/aidatagateway/bootstrap.ok` exists.
+To watch it live, SSH to ops and tail cloud-init:
 
 ```bash
-cd deploy/tf/app && terraform destroy
+sudo tail -f /var/log/cloud-init-output.log
 ```
 
-`manage.py clean` refuses if Terraform state still has resources:
+---
+
+## 7. Re-run database provisioning
 
 ```bash
-cd ../../..
-python manage.py clean
+./manage.py reset
 ```
+
+Re-runs the ops playbook over SSH, which re-applies Liquibase against ADB,
+Oracle Free, and PostgreSQL and re-runs the Mongo init script. Every changeset
+is guarded (`CREATE OR REPLACE` / DROP-if-exists), so re-applying is a no-op
+where nothing changed. Use it when a changeset was edited, or when a first
+deploy half-applied the ADB changelog.
+
+---
+
+## 8. Tear down
+
+```bash
+./manage.py clean
+```
+
+Runs `terraform destroy` (after confirming) and then deletes the local
+artifacts — `.env`, `terraform.tfvars`, Terraform state, and the build output.
+Pass `--yes` to skip both prompts.
+
+---
+
+Day-two operations — reaching each tier, tailing each log, probing each database
+from the ops bastion — live in
+[`docs/troubleshooting.md`](docs/troubleshooting.md).

@@ -1,0 +1,83 @@
+---
+# Retries handle transient /var/lib/rpm/.rpm.lock contention from
+# oracle-cloud-agent plugin reconciliation (the agent was just upgraded
+# by cloud-init's `dnf upgrade` and its plugins fire their own dnf
+# transactions on their own schedule).
+- name: Install podman
+  ansible.builtin.dnf:
+    name:
+      - podman
+      - podman-docker
+    update_cache: yes
+  register: podman_install
+  retries: 12
+  delay: 10
+  until: podman_install is success
+
+- name: Create persistent data directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.owner }}"
+    mode: '0770'
+  loop:
+    - { path: /data/oracle,   owner: 54321 }
+    - { path: /data/postgres, owner: 70 }
+    - { path: /data/mongo,    owner: 999 }
+
+- name: Render Oracle container systemd unit
+  ansible.builtin.template:
+    src: oracle.service.j2
+    dest: /etc/systemd/system/oracle.service
+    mode: '0644'
+
+- name: Render Postgres container systemd unit
+  ansible.builtin.template:
+    src: postgres.service.j2
+    dest: /etc/systemd/system/postgres.service
+    mode: '0644'
+
+- name: Render Mongo container systemd unit
+  ansible.builtin.template:
+    src: mongo.service.j2
+    dest: /etc/systemd/system/mongo.service
+    mode: '0644'
+
+- name: Reload systemd daemon
+  ansible.builtin.systemd:
+    daemon_reload: yes
+
+- name: Start container services
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: started
+    enabled: yes
+  loop:
+    - oracle
+    - postgres
+    - mongo
+
+# Port 1521 opens long before the DB is usable. The only authoritative signal
+# is the container log emitting "DATABASE IS READY TO USE!" — block here so
+# downstream hosts (ops → Liquibase) don't race the PDB lifecycle.
+- name: Wait for Oracle container to report DATABASE IS READY TO USE
+  ansible.builtin.shell: |
+    timeout 900 bash -c "podman logs -f oracle 2>&1 | grep -m 1 'DATABASE IS READY TO USE!'"
+  changed_when: false
+
+# Earlier deploys disabled firewalld outright, but a recent OL9 base-image
+# refresh re-enables it after the cloud-init `dnf update` (firewalld gets
+# pulled in / unmasked by a systemd-presets bump). Leave the service alone
+# and just open the three container ports — survives package updates and
+# matches the OL9 default posture.
+- name: Open container ports in firewalld (1521, 5432, 27017)
+  ansible.posix.firewalld:
+    port: "{{ item }}"
+    permanent: yes
+    immediate: yes
+    state: enabled
+  loop:
+    - 1521/tcp
+    - 5432/tcp
+    - 27017/tcp

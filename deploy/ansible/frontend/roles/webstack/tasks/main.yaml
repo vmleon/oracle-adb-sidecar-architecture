@@ -1,0 +1,37 @@
+---
+# Retries handle transient /var/lib/rpm/.rpm.lock contention from
+# oracle-cloud-agent plugin reconciliation (the agent was just upgraded
+# by cloud-init's `dnf upgrade` and its plugins fire their own dnf
+# transactions on their own schedule).
+- name: Install nginx
+  ansible.builtin.dnf:
+    name: nginx
+    update_cache: yes
+  register: nginx_install
+  retries: 12
+  delay: 10
+  until: nginx_install is success
+
+- name: Unpack frontend dist into the nginx root
+  ansible.builtin.unarchive:
+    src: web.zip
+    dest: /usr/share/nginx/html/
+    remote_src: false
+
+- name: Render nginx config
+  ansible.builtin.template:
+    src: nginx.conf.j2
+    dest: /etc/nginx/nginx.conf
+  notify: restart nginx
+
+- name: Enable nginx
+  ansible.builtin.service:
+    name: nginx.service
+    state: started
+    enabled: yes
+
+- name: Disable firewalld
+  ansible.builtin.service:
+    name: firewalld
+    state: stopped
+    enabled: no

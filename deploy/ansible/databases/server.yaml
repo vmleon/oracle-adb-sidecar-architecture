@@ -23,7 +23,7 @@
         exit 1
       changed_when: false
   roles:
-    - podman
+    - dbstack
   post_tasks:
     - name: Re-enable dnf-makecache.timer for ongoing metadata refresh
       ansible.builtin.systemd:

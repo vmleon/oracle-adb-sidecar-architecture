@@ -17,9 +17,14 @@ databaseChangeLog:
               END;
               /
 
-  # ----- 2. OCI API key credential (drop+create for idempotency) -----
+  # ----- 2. Resource principal (the ADB authenticates as itself) -----
+  # Profiles and the vector index reference the built-in
+  # OCI$RESOURCE_PRINCIPAL credential, so no API key or private key ever
+  # reaches the database. The tenancy must carry a dynamic group matching
+  # this ADB and a policy granting it generative-ai-family use plus read on
+  # the RAG bucket — see DEPLOY.md, "Tenancy prerequisites".
   - changeSet:
-      id: adb-005-cred-oci-genai
+      id: adb-005-enable-resource-principal
       author: aidatagateway
       runOnChange: true
       changes:
@@ -28,14 +33,9 @@ databaseChangeLog:
             splitStatements: false
             sql: |
               BEGIN
-                BEGIN DBMS_CLOUD.DROP_CREDENTIAL('OCI_API_KEY_CRED'); EXCEPTION WHEN OTHERS THEN NULL; END;
-                DBMS_CLOUD.CREATE_CREDENTIAL(
-                  credential_name => 'OCI_API_KEY_CRED',
-                  user_ocid       => '${oci_user_ocid}',
-                  tenancy_ocid    => '${oci_tenancy_ocid}',
-                  private_key     => '${oci_private_api_key}',
-                  fingerprint     => '${oci_fingerprint}'
-                );
+                DBMS_CLOUD_ADMIN.ENABLE_RESOURCE_PRINCIPAL();
+              EXCEPTION WHEN OTHERS THEN
+                IF INSTR(LOWER(SQLERRM), 'already') = 0 THEN RAISE; END IF;
               END;
               /
 
@@ -56,7 +56,7 @@ databaseChangeLog:
                   attributes   =>
                   '{
                     "provider": "oci",
-                    "credential_name": "OCI_API_KEY_CRED",
+                    "credential_name": "OCI$RESOURCE_PRINCIPAL",
                     "object_list": [
                       {"owner": "ADMIN", "name": "V_BNK_CUSTOMERS"},
                       {"owner": "ADMIN", "name": "V_BNK_ACCOUNTS"},
@@ -86,7 +86,7 @@ databaseChangeLog:
                   attributes   =>
                   '{
                     "provider": "oci",
-                    "credential_name": "OCI_API_KEY_CRED",
+                    "credential_name": "OCI$RESOURCE_PRINCIPAL",
                     "object_list": [
                       {"owner": "ADMIN", "name": "V_BNK_POLICIES"},
                       {"owner": "ADMIN", "name": "V_BNK_RULES"}
@@ -117,7 +117,7 @@ databaseChangeLog:
                   attributes   =>
                   '{
                     "provider": "oci",
-                    "credential_name": "OCI_API_KEY_CRED",
+                    "credential_name": "OCI$RESOURCE_PRINCIPAL",
                     "object_list": [
                       {"owner": "ADMIN", "name": "V_BNK_CUSTOMERS"}
                     ],
@@ -144,7 +144,7 @@ databaseChangeLog:
                   attributes   =>
                   '{
                     "provider": "oci",
-                    "credential_name": "OCI_API_KEY_CRED",
+                    "credential_name": "OCI$RESOURCE_PRINCIPAL",
                     "vector_index_name": "BANKING_POLICY_INDEX",
                     "region": "${genai_region}",
                     "oci_compartment_id": "${oci_genai_compartment_id}",
@@ -169,7 +169,7 @@ databaseChangeLog:
                   attributes   =>
                   '{
                     "provider": "oci",
-                    "credential_name": "OCI_API_KEY_CRED",
+                    "credential_name": "OCI$RESOURCE_PRINCIPAL",
                     "region": "${genai_region}",
                     "oci_compartment_id": "${oci_genai_compartment_id}",
                     "oci_apiformat": "GENERIC"
@@ -195,7 +195,7 @@ databaseChangeLog:
                   index_name => 'BANKING_POLICY_INDEX',
                   attributes => '{"vector_db_provider":"oracle",
                                   "location":"https://objectstorage.${genai_region}.oraclecloud.com/n/${rag_bucket_namespace}/b/${rag_bucket_name}/o/",
-                                  "object_storage_credential_name":"OCI_API_KEY_CRED",
+                                  "object_storage_credential_name":"OCI$RESOURCE_PRINCIPAL",
                                   "profile_name":"BANKING_RAG",
                                   "chunk_size":1500,
                                   "chunk_overlap":300}');

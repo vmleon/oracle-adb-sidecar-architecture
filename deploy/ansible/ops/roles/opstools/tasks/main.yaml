@@ -1,0 +1,467 @@
+---
+# Retries handle transient /var/lib/rpm/.rpm.lock contention from
+# oracle-cloud-agent plugin reconciliation (the agent was just upgraded
+# by cloud-init's `dnf upgrade` and its plugins fire their own dnf
+# transactions on their own schedule).
+- name: Install jump-host tools + JDK 23 + SQLcl + postgresql client + ncat + OCI CLI
+  ansible.builtin.dnf:
+    name:
+      - vim
+      - git
+      - curl
+      - jq
+      - tmux
+      - unzip
+      - nmap-ncat
+      - oci-utils
+      - python3-oci-cli
+      - jdk-23
+      - sqlcl
+      - postgresql
+    update_cache: yes
+  register: jumphost_tools_install
+  retries: 12
+  delay: 10
+  until: jumphost_tools_install is success
+
+- name: Add MongoDB 8.0 yum repository (for mongosh)
+  ansible.builtin.yum_repository:
+    name: mongodb-org-8.0
+    description: MongoDB Repository
+    baseurl: https://repo.mongodb.org/yum/redhat/9/mongodb-org/8.0/x86_64/
+    gpgcheck: yes
+    gpgkey: https://pgp.mongodb.com/server-8.0.asc
+    enabled: yes
+
+# yum_repository configures the repo but doesn't import the GPG key.
+# Modern dnf refuses to auto-import keys non-interactively, so without
+# this step the next dnf install fails with "Public key for
+# mongodb-mongosh-...rpm is not installed". Retries handle the transient
+# /var/lib/rpm/.rpm.lock contention right after the previous dnf op.
+- name: Import MongoDB GPG key
+  ansible.builtin.rpm_key:
+    state: present
+    key: https://pgp.mongodb.com/server-8.0.asc
+  register: mongo_gpg_import
+  retries: 12
+  delay: 10
+  until: mongo_gpg_import is success
+
+- name: Install mongosh
+  ansible.builtin.dnf:
+    name: mongodb-mongosh
+    update_cache: yes
+  register: mongosh_install
+  retries: 12
+  delay: 10
+  until: mongosh_install is success
+
+- name: Ensure /opt/liquibase exists
+  ansible.builtin.file:
+    path: /opt/liquibase
+    state: directory
+    mode: '0755'
+
+- name: Check if liquibase is already installed
+  ansible.builtin.stat:
+    path: /opt/liquibase/liquibase
+  register: liquibase_bin
+
+- name: Unpack Liquibase 4.29.2 to /opt/liquibase
+  ansible.builtin.unarchive:
+    src: https://github.com/liquibase/liquibase/releases/download/v4.29.2/liquibase-4.29.2.tar.gz
+    dest: /opt/liquibase
+    remote_src: yes
+  when: not liquibase_bin.stat.exists
+
+- name: Symlink liquibase to /usr/bin (in sudo's secure_path so the playbook can invoke it)
+  ansible.builtin.file:
+    src: /opt/liquibase/liquibase
+    dest: /usr/bin/liquibase
+    state: link
+    force: yes
+
+- name: Download Oracle JDBC driver (ojdbc11) into Liquibase lib
+  ansible.builtin.get_url:
+    url: https://repo1.maven.org/maven2/com/oracle/database/jdbc/ojdbc11/23.9.0.25.07/ojdbc11-23.9.0.25.07.jar
+    dest: /opt/liquibase/lib/ojdbc11-23.9.0.25.07.jar
+    mode: '0644'
+
+# Oracle PKI — required to open the SSO wallet (cwallet.sso). Without it
+# ojdbc11 throws "NoSuchAlgorithmException: SSO KeyStore not available" on
+# any thin-driver connection to ADB via wallet. Modern oraclepki (23.x)
+# is self-contained; the legacy osdt_core / osdt_cert companions are not
+# published past 21.21.0.0 on Maven Central and are no longer needed.
+- name: Download Oracle PKI (oraclepki) into Liquibase lib
+  ansible.builtin.get_url:
+    url: https://repo1.maven.org/maven2/com/oracle/database/security/oraclepki/23.9.0.25.07/oraclepki-23.9.0.25.07.jar
+    dest: /opt/liquibase/lib/oraclepki-23.9.0.25.07.jar
+    mode: '0644'
+
+- name: Download PostgreSQL JDBC driver into Liquibase lib
+  ansible.builtin.get_url:
+    url: https://repo1.maven.org/maven2/org/postgresql/postgresql/42.7.4/postgresql-42.7.4.jar
+    dest: /opt/liquibase/lib/postgresql-42.7.4.jar
+    mode: '0644'
+
+# --- Saved client connections (run BEFORE Liquibase so failures in the
+#     database-seeding block don't leave the operator without tools).
+
+- name: Set SQLPATH in .bashrc so SQLcl picks up /home/opc/login.sql
+  ansible.builtin.lineinfile:
+    path: /home/opc/.bashrc
+    line: "export SQLPATH=$HOME"
+    state: present
+  become_user: opc
+
+- name: Add /home/opc/bin to PATH in .bashrc (for db shortcuts)
+  ansible.builtin.lineinfile:
+    path: /home/opc/.bashrc
+    line: 'export PATH="$HOME/bin:$PATH"'
+    state: present
+  become_user: opc
+
+- name: Source /home/opc/endpoints.env from .bashrc (exposes BACK/FRONT/DB)
+  ansible.builtin.lineinfile:
+    path: /home/opc/.bashrc
+    line: '[ -f "$HOME/endpoints.env" ] && . "$HOME/endpoints.env"'
+    state: present
+  become_user: opc
+
+- name: Create /home/opc/bin for shortcut scripts
+  ansible.builtin.file:
+    path: /home/opc/bin
+    state: directory
+    owner: opc
+    group: opc
+    mode: '0755'
+
+- name: Drop login.sql for SQLcl
+  ansible.builtin.copy:
+    dest: /home/opc/login.sql
+    owner: opc
+    group: opc
+    mode: '0640'
+    content: |
+      SET LINESIZE 1000
+      SET LONG 2000
+      SET SERVEROUTPUT ON
+      SET FEEDBACK ON
+
+- name: Render SQLcl connection bootstrap (adb via wallet + orafree via JDBC URL)
+  ansible.builtin.copy:
+    dest: /home/opc/conn.sql
+    owner: opc
+    group: opc
+    mode: '0600'
+    content: |
+      WHENEVER SQLERROR EXIT SQL.SQLCODE
+      WHENEVER OSERROR  EXIT FAILURE
+      conn -save adb     -replace -cloudconfig /home/opc/wallet.zip -wallet -savepwd -url {{ adb_service_name }}_high -u ADMIN  -password '{{ adb_admin_password }}'
+      conn -save orafree -replace -savepwd -url jdbc:oracle:thin:@//{{ databases_private_ip }}:1521/FREEPDB1 -u SYSTEM -password '{{ oracle_db_password }}'
+      EXIT;
+
+# Wait for the databases tier to expose all three ports before we touch
+# SQLcl (which test-connects on `conn -save -savepwd`) or run Liquibase.
+# Oracle Free first-boot can take 5–10 min — longer than the cloud-init
+# pre-Ansible sleep, so without this the orafree registration races the
+# container and dies on ORA-17820.
+#
+# Layering: TCP port-up first, then service-level deep readiness. A TCP
+# accept on 1521 / 5432 / 27017 only proves the listener is up — the
+# Oracle PDB can still be in MOUNTED state, Postgres can still be
+# rejecting connections during startup, and Mongo can still be replaying
+# its journal. The deep checks below close that gap before we send any
+# credentialed traffic.
+- name: Wait for Oracle Free 1521 listener (TCP)
+  ansible.builtin.wait_for:
+    host: "{{ databases_private_ip }}"
+    port: 1521
+    timeout: 600
+    sleep: 10
+
+- name: Wait for Postgres 5432 listener (TCP)
+  ansible.builtin.wait_for:
+    host: "{{ databases_private_ip }}"
+    port: 5432
+    timeout: 600
+    sleep: 10
+
+- name: Wait for Mongo 27017 listener (TCP)
+  ansible.builtin.wait_for:
+    host: "{{ databases_private_ip }}"
+    port: 27017
+    timeout: 600
+    sleep: 10
+
+# pg_isready returns rc=0 only when the server is actually accepting
+# connections (not when it's still in startup recovery). No credentials
+# sent — the probe is protocol-level only.
+- name: Wait for Postgres to accept queries (pg_isready, no credentials)
+  ansible.builtin.command: pg_isready -h {{ databases_private_ip }} -p 5432 -t 10
+  register: postgres_ready_check
+  retries: 60
+  delay: 10
+  until: postgres_ready_check.rc == 0
+  changed_when: false
+
+# mongosh `ping` admin command runs as the admin user but is a no-op DB
+# call; we just need a 1.0 response. Auth happens once here — if creds
+# are bad mongosh exits non-zero immediately and the playbook aborts.
+- name: Wait for Mongo to accept queries (mongosh ping)
+  ansible.builtin.command: >-
+    mongosh --quiet --eval "db.runCommand({ping:1}).ok"
+    "mongodb://admin:{{ mongo_db_password | urlencode }}@{{ databases_private_ip }}:27017/admin"
+  register: mongo_ready_check
+  retries: 60
+  delay: 10
+  until: mongo_ready_check.rc == 0 and '1' in mongo_ready_check.stdout
+  changed_when: false
+  no_log: true
+
+# SQLcl on this build ships with a broken JLine (missing jansi/jna natives)
+# that crashes whenever stdin isn't a real TTY. `script -q /dev/null -c ...`
+# wraps the command in a pseudo-TTY so JLine initializes cleanly.
+#
+# Important: `script` exits 0 whenever it could RUN the inner command, even
+# if SQLcl printed Connection Failed / ORA-12514. And SQLcl's WHENEVER
+# SQLERROR does not fire on `conn` failures (it only catches SQL errors,
+# not connect-time errors). So `rc == 0` is a useless success signal here
+# — we have to inspect stdout for ORA-* and decide retry vs. fail there.
+#
+# Retry policy is deliberately auth-aware. Oracle's DEFAULT profile locks
+# an account after 10 failed login attempts, so we cannot blindly retry.
+# - Transient errors (ORA-12514 / 12523 / 12526 / 12528 / 01033 — listener
+#   up but PDB still opening, or service not yet registered) keep polling.
+#   These all fire before authentication, so they don't increment
+#   FAILED_LOGIN_ATTEMPTS.
+# - ORA-01017 (bad password) or ORA-28000 (account already locked) stop
+#   retrying immediately. One credentialed attempt is enough; a second
+#   would needlessly increment the lock count.
+# 60 retries × 10 s = 10 min budget for the PDB to come up.
+- name: Register SQLcl saved connections (adb, orafree)
+  ansible.builtin.command: script -q /dev/null -c "sql /nolog @/home/opc/conn.sql"
+  become_user: opc
+  register: sqlcl_conn_result
+  retries: 60
+  delay: 10
+  until: >
+    'ORA-' not in sqlcl_conn_result.stdout
+    or 'ORA-01017' in sqlcl_conn_result.stdout
+    or 'ORA-28000' in sqlcl_conn_result.stdout
+  changed_when: "'Saved' in sqlcl_conn_result.stdout or 'saved' in sqlcl_conn_result.stdout"
+  failed_when: sqlcl_conn_result.rc != 0 or 'ORA-' in sqlcl_conn_result.stdout
+
+- name: Write .pgpass for the postgres container
+  ansible.builtin.copy:
+    dest: /home/opc/.pgpass
+    owner: opc
+    group: opc
+    mode: '0600'
+    content: |
+      {{ databases_private_ip }}:5432:postgres:postgres:{{ postgres_db_password }}
+
+- name: Install pg shortcut (wraps psql with saved creds)
+  ansible.builtin.copy:
+    dest: /home/opc/bin/pg
+    owner: opc
+    group: opc
+    mode: '0755'
+    content: |
+      #!/bin/bash
+      exec psql -h {{ databases_private_ip }} -p 5432 -U postgres -d postgres "$@"
+
+- name: Install mg shortcut (wraps mongosh with saved URI)
+  ansible.builtin.copy:
+    dest: /home/opc/bin/mg
+    owner: opc
+    group: opc
+    mode: '0700'
+    content: |
+      #!/bin/bash
+      exec mongosh "mongodb://admin:{{ mongo_db_password | urlencode }}@{{ databases_private_ip }}:27017/admin" "$@"
+
+- name: Install adb shortcut (sql -name adb)
+  ansible.builtin.copy:
+    dest: /home/opc/bin/adb
+    owner: opc
+    group: opc
+    mode: '0755'
+    content: |
+      #!/bin/bash
+      exec sql -name adb "$@"
+
+- name: Install orafree shortcut (sql -name orafree)
+  ansible.builtin.copy:
+    dest: /home/opc/bin/orafree
+    owner: opc
+    group: opc
+    mode: '0755'
+    content: |
+      #!/bin/bash
+      exec sql -name orafree "$@"
+
+# --- Render + run Liquibase against all four engines ---
+
+- name: Render Liquibase properties for ADB
+  ansible.builtin.template:
+    src: "{{ liquibase_adb_dir }}/liquibase.properties.j2"
+    dest: "{{ liquibase_adb_dir }}/liquibase.properties"
+    mode: '0600'
+  vars:
+    admin_password: "{{ adb_admin_password }}"
+    oci_genai_region: "{{ oci_genai_region }}"
+    oci_genai_compartment_id: "{{ oci_genai_compartment_id }}"
+    rag_bucket_name: "{{ rag_bucket_name }}"
+    rag_bucket_namespace: "{{ rag_bucket_namespace }}"
+
+- name: Render Liquibase properties for Oracle Free
+  ansible.builtin.template:
+    src: "{{ liquibase_oracle_dir }}/liquibase.properties.j2"
+    dest: "{{ liquibase_oracle_dir }}/liquibase.properties"
+    mode: '0600'
+
+- name: Render Liquibase properties for Postgres
+  ansible.builtin.template:
+    src: "{{ liquibase_postgres_dir }}/liquibase.properties.j2"
+    dest: "{{ liquibase_postgres_dir }}/liquibase.properties"
+    mode: '0600'
+
+# Listener on 1521 comes up well before the PDB is open — poll Liquibase
+# until it can actually connect and run a query (ORA-01033 goes away).
+# Same auth-aware retry rules as SQLcl conn-save above: bail out fast on
+# ORA-01017 / ORA-28000 so SYSTEM never accumulates failed-login attempts.
+# 60 × 10 s = 10 min budget; in practice the SQLcl conn-save above has
+# already proven the PDB accepts queries, so this almost always succeeds
+# on the first attempt.
+- name: Wait for Oracle Free PDB to accept Liquibase queries
+  ansible.builtin.command:
+    cmd: liquibase --defaults-file=liquibase.properties status
+    chdir: "{{ liquibase_oracle_dir }}"
+  register: oracle_ready_check
+  retries: 60
+  delay: 10
+  until: >
+    oracle_ready_check.rc == 0
+    or 'ORA-01017' in (oracle_ready_check.stderr | default(''))
+    or 'ORA-28000' in (oracle_ready_check.stderr | default(''))
+  changed_when: false
+  failed_when: oracle_ready_check.rc != 0
+
+- name: Run Liquibase update against Oracle Free (deployment_marker + banking)
+  ansible.builtin.command:
+    cmd: liquibase --defaults-file=liquibase.properties update
+    chdir: "{{ liquibase_oracle_dir }}"
+  register: oracle_liquibase_result
+  changed_when: "'Update has been successful' in oracle_liquibase_result.stdout"
+
+- name: Run Liquibase update against Postgres (deployment_marker + banking)
+  ansible.builtin.command:
+    cmd: liquibase --defaults-file=liquibase.properties update
+    chdir: "{{ liquibase_postgres_dir }}"
+  register: postgres_liquibase_result
+  changed_when: "'Update has been successful' in postgres_liquibase_result.stdout"
+
+- name: Run mongosh init.js against Mongo (deployment_marker + support_tickets)
+  ansible.builtin.command:
+    cmd: >-
+      mongosh --quiet
+      "mongodb://admin:{{ mongo_db_password | urlencode }}@{{ databases_private_ip }}:27017/admin"
+      {{ mongo_init_js }}
+  register: mongo_init_result
+  changed_when: "'Mongo init.js complete' in mongo_init_result.stdout"
+  no_log: true
+
+# RAG policy docs are uploaded to OCI Object Storage by Terraform
+# (oci_objectstorage_object resources in deploy/tf/app/storage.tf), so
+# the bucket is already populated by the time this role runs.
+
+- name: Run Liquibase update against ADB (credentials, DB_LINKs, banking views) — robust against ORA-17008 and DB_LINK DNS races
+  # Two transient failure modes are handled here, both observed in real
+  # deploys:
+  #
+  # 1. ORA-12545 / ORA-12541 — the V_* view changesets fail when the
+  #    DB_LINK was just CREATEd but the ADB private endpoint hasn't yet
+  #    resolved the VCN-private FQDN of the databases compute. OCI DNS
+  #    propagation can take a couple of minutes. The `until` loop below
+  #    keeps retrying ONLY while the failure is one of those DNS-class
+  #    errors; any other error stops the loop and falls through to the
+  #    rescue block.
+  #
+  # 2. ORA-17008 — ADB drops the JDBC session mid-Liquibase, leaving a
+  #    stale DATABASECHANGELOGLOCK row. The rescue block releases the
+  #    lock and retries; same DNS-race protection applies on the retry.
+  #
+  # All ADB DDL uses CREATE OR REPLACE / DROP-if-exists guards, so
+  # re-running already-applied changesets is a no-op.
+  block:
+    - name: ADB Liquibase update (first attempt, retries on DB_LINK DNS race)
+      ansible.builtin.command:
+        cmd: liquibase --defaults-file=liquibase.properties update
+        chdir: "{{ liquibase_adb_dir }}"
+      register: adb_liquibase_result
+      retries: 10
+      delay: 30
+      until: >
+        adb_liquibase_result.rc == 0
+        or not (
+          'ORA-12545' in (adb_liquibase_result.stderr | default(''))
+          or 'ORA-12541' in (adb_liquibase_result.stderr | default(''))
+        )
+      # Liquibase 4.29 emits the success line on stderr, not stdout.
+      changed_when: "'Update has been successful' in (adb_liquibase_result.stdout ~ adb_liquibase_result.stderr)"
+  rescue:
+    - name: Release stale Liquibase lock (previous ORA-17008 left it held)
+      ansible.builtin.command:
+        cmd: liquibase --defaults-file=liquibase.properties releaseLocks
+        chdir: "{{ liquibase_adb_dir }}"
+    - name: ADB Liquibase update (retry after lock release, retries on DB_LINK DNS race)
+      ansible.builtin.command:
+        cmd: liquibase --defaults-file=liquibase.properties update
+        chdir: "{{ liquibase_adb_dir }}"
+      register: adb_liquibase_result
+      retries: 10
+      delay: 30
+      until: >
+        adb_liquibase_result.rc == 0
+        or not (
+          'ORA-12545' in (adb_liquibase_result.stderr | default(''))
+          or 'ORA-12541' in (adb_liquibase_result.stderr | default(''))
+        )
+      # Liquibase 4.29 emits the success line on stderr, not stdout.
+      changed_when: "'Update has been successful' in (adb_liquibase_result.stdout ~ adb_liquibase_result.stderr)"
+
+- name: Capture Liquibase + mongosh output to /home/opc/ops/liquibase.log
+  ansible.builtin.copy:
+    content: |
+      === ORACLE FREE ===
+      STDOUT:
+      {{ oracle_liquibase_result.stdout }}
+
+      STDERR:
+      {{ oracle_liquibase_result.stderr }}
+
+      === POSTGRES ===
+      STDOUT:
+      {{ postgres_liquibase_result.stdout }}
+
+      STDERR:
+      {{ postgres_liquibase_result.stderr }}
+
+      === MONGO ===
+      STDOUT:
+      {{ mongo_init_result.stdout }}
+
+      STDERR:
+      {{ mongo_init_result.stderr }}
+
+      === ADB ===
+      STDOUT:
+      {{ adb_liquibase_result.stdout }}
+
+      STDERR:
+      {{ adb_liquibase_result.stderr }}
+    dest: /home/opc/ops/liquibase.log
+    owner: opc
+    group: opc
+    mode: '0600'

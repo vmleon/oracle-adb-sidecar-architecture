@@ -1,0 +1,48 @@
+spring:
+  application:
+    name: back
+  main:
+    banner-mode: "off"
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+      - com.oracle.spring.ucp.UCPAutoConfiguration
+  data:
+    mongodb:
+      uri: mongodb://admin:{{ mongo_db_password | urlencode }}@{{ databases_private_ip }}:27017/banking?authSource=admin
+server:
+  port: 8080
+datasources:
+  adb:
+    jdbc-url: jdbc:oracle:thin:@{{ adb_service_name }}_high?TNS_ADMIN=/home/opc/backend/wallet
+    username: ADMIN
+    password: "{{ adb_admin_password }}"
+  oracle:
+    jdbc-url: jdbc:oracle:thin:@//{{ databases_private_ip }}:1521/FREEPDB1
+    username: SYSTEM
+    password: "{{ oracle_db_password }}"
+  postgres:
+    jdbc-url: jdbc:postgresql://{{ databases_private_ip }}:5432/postgres
+    username: postgres
+    password: "{{ postgres_db_password }}"
+    driver-class-name: org.postgresql.Driver
+selectai:
+  agents:
+    team: BANKING_INVESTIGATION_TEAM
+    keepwarm:
+      enabled: true
+      interval-ms: 60000
+      initial-delay-ms: 90000
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,logfile,loggers,metrics,scheduledtasks
+  endpoint:
+    logfile:
+      enabled: true
+logging:
+  file:
+    name: {{ backend_dest_directory }}/logs/app.log
+  pattern:
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n"

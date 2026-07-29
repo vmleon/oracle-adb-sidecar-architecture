@@ -1,0 +1,85 @@
+locals {
+  anywhere = "0.0.0.0/0"
+
+  cloud_init_content = templatefile("${path.module}/userdata/bootstrap.tftpl", {
+    project_name              = var.project_name
+    region_name               = var.region
+    ansible_ops_par_full_path = var.ansible_ops_artifact_par_full_path
+    wallet_par_full_path      = var.wallet_par_full_path
+    database_par_full_path    = var.database_par_full_path
+    adb_service_name          = var.adb_service_name
+    adb_admin_password        = var.adb_admin_password
+    oracle_db_password        = var.oracle_db_password
+    postgres_db_password      = var.postgres_db_password
+    mongo_db_password         = var.mongo_db_password
+    databases_private_ip      = var.databases_private_ip
+    databases_fqdn            = var.databases_fqdn
+    backend_private_ip        = var.backend_private_ip
+    frontend_private_ip       = var.frontend_private_ip
+    rag_bucket_name           = var.rag_bucket_name
+    rag_bucket_namespace      = var.rag_bucket_namespace
+    oci_genai_region          = var.oci_genai_region
+    oci_genai_compartment_id  = var.oci_genai_compartment_id
+  })
+}
+
+data "oci_core_images" "ol9_images" {
+  compartment_id           = var.compartment_ocid
+  operating_system         = "Oracle Linux"
+  operating_system_version = "9"
+  shape                    = var.instance_shape
+  sort_by                  = "TIMECREATED"
+  sort_order               = "DESC"
+
+  filter {
+    name   = "display_name"
+    values = ["^Oracle-Linux-9\\.\\d+-\\d{4}\\.\\d{2}\\.\\d{2}-\\d+$"]
+    regex  = true
+  }
+}
+
+resource "oci_core_instance" "instance" {
+  availability_domain = lookup(var.ads[0], "name")
+  compartment_id      = var.compartment_ocid
+  display_name        = "ops${var.project_name}${var.deploy_id}"
+  shape               = var.instance_shape
+
+  metadata = {
+    ssh_authorized_keys = var.ssh_public_key
+    user_data           = base64encode(local.cloud_init_content)
+  }
+
+  agent_config {
+    plugins_config {
+      desired_state = "ENABLED"
+      name          = "Bastion"
+    }
+  }
+
+  shape_config {
+    ocpus         = 1
+    memory_in_gbs = 16
+  }
+
+  create_vnic_details {
+    subnet_id                 = var.subnet_id
+    assign_public_ip          = true
+    display_name              = "ops${var.project_name}${var.deploy_id}"
+    assign_private_dns_record = true
+    hostname_label            = "ops${var.deploy_id}"
+  }
+
+  source_details {
+    source_type = "image"
+    source_id   = data.oci_core_images.ol9_images.images[0].id
+  }
+
+  timeouts {
+    create = "60m"
+  }
+}
+
+resource "time_sleep" "wait_for_instance" {
+  depends_on      = [oci_core_instance.instance]
+  create_duration = "3m"
+}
