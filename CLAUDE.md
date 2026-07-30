@@ -26,6 +26,9 @@ reader to `cd deploy/terraform && terraform ...`.
 `clean` keeps `.env` and `terraform.tfvars` so a rebuild doesn't need the
 interactive `setup`; `--purge` drops them, `--local-only` skips the destroy.
 
+Every verb that prompts takes `--yes` (`provision`, `reset`, `clean`), so the
+whole flow can run unattended during a recovery.
+
 ## Conventions
 
 - **Tier words are `ops`, `frontend`, `backend`, `databases`** — everywhere:

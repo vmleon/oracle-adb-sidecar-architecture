@@ -171,7 +171,8 @@ Re-runs the ops playbook over SSH, which re-applies Liquibase against ADB,
 Oracle Free, and PostgreSQL and re-runs the Mongo init script. Every changeset
 is guarded (`CREATE OR REPLACE` / DROP-if-exists), so re-applying is a no-op
 where nothing changed. Use it when a changeset was edited, or when a first
-deploy half-applied the ADB changelog.
+deploy half-applied the ADB changelog. Pass `--yes` to skip the prompt for
+unattended recovery.
 
 ---
 

@@ -597,7 +597,8 @@ def status():
 
 
 @cli.command()
-def reset():
+@click.option("--yes", is_flag=True, help="Skip the confirmation prompt")
+def reset(yes):
     """Re-run database provisioning (Liquibase on all four engines) from ops."""
     console.print("[bold]Reset database provisioning[/bold]\n")
 
@@ -617,7 +618,7 @@ def reset():
         "Every changeset is guarded (CREATE OR REPLACE / DROP-if-exists), so "
         "re-applying is a no-op where nothing changed.\n"
     )
-    if not click.confirm(f"Re-run database provisioning on ops ({ops_ip})?", default=True):
+    if not (yes or click.confirm(f"Re-run database provisioning on ops ({ops_ip})?", default=True)):
         console.print("[yellow]Reset cancelled.[/yellow]")
         return
 
