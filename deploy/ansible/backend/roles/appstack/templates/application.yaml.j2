@@ -29,10 +29,8 @@ datasources:
 selectai:
   agents:
     team: BANKING_INVESTIGATION_TEAM
-    keepwarm:
+    warmup:
       enabled: true
-      interval-ms: 60000
-      initial-delay-ms: 90000
 management:
   endpoints:
     web:
@@ -45,4 +43,7 @@ logging:
   file:
     name: {{ backend_dest_directory }}/logs/app.log
   pattern:
-    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] rid=%X{rid:-–} %logger{36} - %msg%n"
+    console: "%d{HH:mm:ss.SSS} %-5level rid=%X{rid:-–} %logger{24} - %msg%n"
+  level:
+    dev.victormartin.aidatagateway: INFO

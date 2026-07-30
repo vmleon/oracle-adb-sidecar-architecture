@@ -197,10 +197,9 @@ transaction block` (ORA-28500 on the Oracle side). Interactive SQLcl
   `gateway_params` sub-keys per `db_type`.
 - **Agent compatibility caveat.** Any `DBMS_CLOUD_AI_AGENT.RUN_TEAM`
   call enumerates every entry in `USER_DB_LINKS` from a
-  `DBMS_SCHEDULER` worker session. If the worker's cached `PG_LINK`
-  gateway connection has died from `HS_IDLE_TIMEOUT` (5 min, fixed),
-  enumeration fast-fails. Mitigation is an always-on agent-path
-  keep-warm (`AgentsService.keepWarm()` running `RUN_TEAM` every 60 s).
+  gateway connection. If it has died from `HS_IDLE_TIMEOUT` (5 min, fixed),
+  the call fails and the next one succeeds on a fresh worker. Mitigation is
+  one transparent retry in `AgentsService.runTeamWithGatewayRetry()`.
   Full diagnosis and recovery in
   [`docs/known-limitation-pg-link-gateway.md`](./known-limitation-pg-link-gateway.md).
 

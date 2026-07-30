@@ -10,7 +10,6 @@ import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.NestedExceptionUtils;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -101,50 +100,20 @@ public class AgentsService {
             ORDER BY p.CREATED
             """;
 
-    // Per-task scheduler additional_info (the only place that holds the
-    // actual ORA-* on failure — the agent history views drop the message).
-    private static final String SCHEDULER_INFO_FOR_TASK_SQL = """
-            SELECT additional_info
-            FROM   user_scheduler_job_run_details
-            WHERE  job_name = ?
-            ORDER  BY log_date DESC
-            FETCH  FIRST 1 ROWS ONLY
-            """;
-
-    // Latest non-success scheduler-job error for any task in this team.
-    // Used to enrich exception messages bubbled from RUN_TEAM.
-    private static final String LATEST_TEAM_ERROR_SQL = """
-            SELECT additional_info
-            FROM   user_scheduler_job_run_details
-            WHERE  job_name LIKE ? || '_TASK_%'
-              AND  status <> 'SUCCEEDED'
-              AND  log_date > SYSTIMESTAMP - INTERVAL '5' MINUTE
-            ORDER  BY log_date DESC
-            FETCH  FIRST 1 ROWS ONLY
-            """;
-
     private static final String TEAM_EXISTS_SQL =
             "SELECT COUNT(*) FROM USER_AI_AGENT_TEAMS WHERE AGENT_TEAM_NAME = ? AND STATUS = 'ENABLED'";
 
-    // One transparent retry on the PG_LINK heterogeneous-gateway flap
-    // (mode A in docs/ISSUE_AI_AGENT_RUN_TEAM_PG_LINK_WEDGE.md). The
-    // gateway drops idle RPC connections at HS_IDLE_TIMEOUT (~5 min) and
-    // the very next call lands on a fresh worker. Without this retry,
-    // any user prompt that arrives in the few-hundred-ms window between
-    // a keep-warm flap and the gateway recovering surfaces ORA-28511.
+    // One transparent retry on the heterogeneous-gateway idle drop (mode A in
+    // docs/known-limitation-pg-link-gateway.md). The gateway closes idle RPC
+    // connections at HS_IDLE_TIMEOUT (~5 min, not tunable) and the very next
+    // call lands on a fresh worker, so a prompt arriving on a just-dropped
+    // connection succeeds on the retry instead of surfacing ORA-28511.
     private static final int RUN_TEAM_GATEWAY_RETRIES = 1;
     private static final long RUN_TEAM_RETRY_DELAY_MS = 250L;
 
     private final JdbcTemplate jdbc;
-    // Separate template with a 120 s query timeout for warm-up + keep-warm
-    // RUN_TEAM calls. Without this, a single hung RUN_TEAM blocks Spring's
-    // single-threaded scheduler indefinitely (fixedDelay only fires after
-    // the previous returns), the gateway HS_IDLE_TIMEOUT fires at 5 min,
-    // and the wedge becomes inevitable on the next user request.
-    private final JdbcTemplate keepWarmJdbc;
     private final String teamName;
     private final boolean warmUpEnabled;
-    private final boolean keepWarmEnabled;
     private final Executor warmUpExecutor = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "agents-warmup");
         t.setDaemon(true);
@@ -153,26 +122,20 @@ public class AgentsService {
 
     public AgentsService(@Qualifier("adbJdbc") JdbcTemplate jdbc,
                          @Value("${selectai.agents.team:BANKING_INVESTIGATION_TEAM}") String teamName,
-                         @Value("${selectai.agents.warmup.enabled:true}") boolean warmUpEnabled,
-                         @Value("${selectai.agents.keepwarm.enabled:true}") boolean keepWarmEnabled) {
+                         @Value("${selectai.agents.warmup.enabled:true}") boolean warmUpEnabled) {
         this.jdbc = jdbc;
-        this.keepWarmJdbc = new JdbcTemplate(jdbc.getDataSource());
-        // Generous timeout: cancelling a RUN_TEAM mid-flight (ORA-01013)
-        // aborts DBMS_CLOUD between UTL_HTTP calls and leaks open HTTP
-        // handles in the pooled session; after ~5 leaks that session fails
-        // every RUN_TEAM with ORA-29270. RUN_TEAM legitimately runs 30-150 s
-        // under load, so the timeout only exists to unblock the scheduler
-        // thread from a truly hung call.
-        this.keepWarmJdbc.setQueryTimeout(300);
         this.teamName = teamName;
         this.warmUpEnabled = warmUpEnabled;
-        this.keepWarmEnabled = keepWarmEnabled;
     }
 
     public AgentRunResponse runTeam(String prompt, String conversationIdOrNull) {
         String conversationId = conversationIdOrNull != null
                 ? conversationIdOrNull
                 : createConversation(jdbc);
+
+        log.info("event=run_team_start conv={} team={} prompt_chars={} threaded={}",
+                conversationId, teamName, prompt == null ? 0 : prompt.length(),
+                conversationIdOrNull != null);
 
         long t0 = System.currentTimeMillis();
         String answer;
@@ -190,7 +153,6 @@ public class AgentsService {
                 answer = runTeamWithGatewayRetry(prompt, paramsJson(conversationId), conversationId);
             }
         } catch (RuntimeException e) {
-            refreshAdbPoolIfPoisoned(e);
             long failedMs = System.currentTimeMillis() - t0;
 
             // The agents may well have finished before the call blew up. If the
@@ -203,14 +165,10 @@ public class AgentsService {
                         abbrev(e.getMessage(), 240));
                 answer = recovered;
             } else {
-                String schedulerInfo = fetchLatestTeamSchedulerError();
-                log.error("event=run_team_failed conv={} team={} elapsed_ms={} ora=\"{}\" scheduler_additional_info=\"{}\"",
-                        conversationId, teamName, failedMs,
-                        abbrev(e.getMessage(), 240), abbrev(schedulerInfo, 240));
-                String enriched = (e.getMessage() == null ? "RUN_TEAM failed" : e.getMessage())
-                        + (schedulerInfo == null ? ""
-                           : " | scheduler additional_info: " + schedulerInfo);
-                throw new RuntimeException(enriched, e);
+                log.error("event=run_team_failed conv={} team={} elapsed_ms={} ora=\"{}\"",
+                        conversationId, teamName, failedMs, abbrev(e.getMessage(), 240));
+                throw new RuntimeException(
+                        e.getMessage() == null ? "RUN_TEAM failed" : e.getMessage(), e);
             }
         }
         long elapsed = System.currentTimeMillis() - t0;
@@ -222,9 +180,11 @@ public class AgentsService {
             String execId = jdbc.queryForObject(RESOLVE_EXEC_ID_SQL, String.class, conversationId);
             if (execId != null) {
                 trace = buildTrace(execId, conversationId);
+                logTrace(conversationId, execId, trace);
             }
         } catch (Exception e) {
-            log.warn("Trace assembly failed for conversation {}: {}", conversationId, e.getMessage());
+            log.warn("event=trace_unavailable conv={} cause=\"{}\"",
+                    conversationId, abbrev(e.getMessage(), 240));
         }
 
         return new AgentRunResponse(prompt, answer, conversationId, elapsed, trace);
@@ -264,15 +224,6 @@ public class AgentsService {
         return causeContains(t, "ORA-20050");
     }
 
-    // ORA-01013: a cancelled RUN_TEAM just leaked open UTL_HTTP handles in
-    // its pooled session. ORA-29270: a session already carries >= 5 leaked
-    // handles and fails every RUN_TEAM it serves. Either way the affected
-    // connections are poison — refresh the pool so subsequent calls get
-    // fresh sessions instead of failing until the next backend restart.
-    private static boolean isSessionPoisoning(Throwable t) {
-        return causeContains(t, "ORA-29270") || causeContains(t, "ORA-01013");
-    }
-
     private static boolean causeContains(Throwable t, String marker) {
         Throwable cur = t;
         for (int depth = 0; cur != null && depth < 10; depth++, cur = cur.getCause()) {
@@ -280,18 +231,6 @@ public class AgentsService {
             if (m != null && m.contains(marker)) return true;
         }
         return false;
-    }
-
-    private void refreshAdbPoolIfPoisoned(Throwable t) {
-        if (!isSessionPoisoning(t)) return;
-        try {
-            oracle.ucp.admin.UniversalConnectionPoolManagerImpl
-                    .getUniversalConnectionPoolManager()
-                    .refreshConnectionPool("adb-ucp");
-            log.warn("event=adb_pool_refreshed reason=leaked_utl_http_handles");
-        } catch (Exception e) {
-            log.warn("event=adb_pool_refresh_failed cause=\"{}\"", abbrev(e.getMessage(), 240));
-        }
     }
 
     // Best-effort: never let a recovery attempt mask the original failure.
@@ -310,19 +249,6 @@ public class AgentsService {
 
     private String createConversation(JdbcTemplate template) {
         return template.queryForObject(CREATE_CONVERSATION_SQL, String.class);
-    }
-
-    // Every tick gets its own conversation. Re-running a team against one
-    // long-lived conversation replays a history that only ever grows, and the
-    // call slows down with it — measured at 8.2 s for a conversation's first
-    // run and 18.2 s for its second. Sharing one id across ticks eventually
-    // pushed the call past the query timeout, after which it never recovered.
-    private volatile String keepWarmConversationId;
-
-    private String keepWarmConversation() {
-        String id = createConversation(keepWarmJdbc);
-        keepWarmConversationId = id;
-        return id;
     }
 
     // Fire one throwaway RUN_TEAM call after the backend is up so the GenAI
@@ -349,8 +275,8 @@ public class AgentsService {
                 if (count != null && count > 0) {
                     log.info("Warming up agents team {}...", teamName);
                     long t0 = System.currentTimeMillis();
-                    String conv = keepWarmConversation();
-                    keepWarmJdbc.queryForObject(RUN_TEAM_SQL, String.class, teamName, "warm-up ping; reply with OK.", paramsJson(conv));
+                    String conv = createConversation(jdbc);
+                    jdbc.queryForObject(RUN_TEAM_SQL, String.class, teamName, "warm-up ping; reply with OK.", paramsJson(conv));
                     log.info("Agents warm-up complete in {}ms", System.currentTimeMillis() - t0);
                     return;
                 }
@@ -366,32 +292,6 @@ public class AgentsService {
                 maxAttempts, teamName);
     }
 
-    // PG_LINK-via-heterogeneous-gateway connections cached in DBMS_SCHEDULER
-    // worker sessions die after HS_IDLE_TIMEOUT (~5 min) and the next TASK_0
-    // wedges with ORA-01010 / ORA-02063 from PG_LINK until the worker is
-    // reaped (~10 min). Continuous traffic on the agent path prevents the
-    // wedge — see docs/ISSUE_AI_AGENT_RUN_TEAM_PG_LINK_WEDGE.md. fixedDelay
-    // (not fixedRate) so a slow RUN_TEAM never overlaps with the next tick.
-    @Scheduled(
-            fixedDelayString = "${selectai.agents.keepwarm.interval-ms:60000}",
-            initialDelayString = "${selectai.agents.keepwarm.initial-delay-ms:90000}")
-    public void keepWarm() {
-        if (!keepWarmEnabled) return;
-        try {
-            Integer count = jdbc.queryForObject(TEAM_EXISTS_SQL, Integer.class, teamName);
-            if (count == null || count == 0) return;
-            long t0 = System.currentTimeMillis();
-            String conv = keepWarmConversation();
-            keepWarmJdbc.queryForObject(RUN_TEAM_SQL, String.class, teamName, "keep-warm; reply with OK.", paramsJson(conv));
-            log.debug("event=keepwarm_ok team={} conv={} elapsed_ms={}", teamName, conv, System.currentTimeMillis() - t0);
-        } catch (Exception e) {
-            if (isUnknownConversation(e)) keepWarmConversationId = null;
-            refreshAdbPoolIfPoisoned(e);
-            Throwable root = NestedExceptionUtils.getMostSpecificCause(e);
-            log.warn("event=keepwarm_failed team={} cause=\"{}\"", teamName, abbrev(root.getMessage(), 240));
-        }
-    }
-
     public AgentTrace traceForConversation(String conversationId) {
         String execId;
         try {
@@ -402,14 +302,35 @@ public class AgentsService {
         return execId == null ? null : buildTrace(execId, conversationId);
     }
 
+    // One line per agent and per tool call. This is what makes the agent path
+    // greppable: `event=agent_task` shows which agent was slow or failed, and
+    // `event=agent_tool` shows the Select AI profile/tool behind it, with the
+    // SQL or RAG round-trip time. Both carry the same rid as the HTTP request.
+    private void logTrace(String conversationId, String execId, AgentTrace trace) {
+        if (trace == null) return;
+        if (trace.tasks() != null) {
+            for (AgentTrace.TaskTrace k : trace.tasks()) {
+                log.info("event=agent_task conv={} exec={} order={} agent={} task={} state={} duration_ms={} result_chars={}",
+                        conversationId, execId, k.taskOrder(), k.agentName(), k.taskName(),
+                        k.state(), k.durationMillis(),
+                        k.result() == null ? 0 : k.result().length());
+            }
+        }
+        if (trace.tools() != null) {
+            for (AgentTrace.ToolTrace t : trace.tools()) {
+                log.info("event=agent_tool conv={} exec={} order={} agent={} tool={} duration_ms={} output_chars={}",
+                        conversationId, execId, t.taskOrder(), t.agentName(), t.toolName(),
+                        t.durationMillis(),
+                        t.output() == null ? 0 : t.output().length());
+            }
+        }
+    }
+
     private AgentTrace buildTrace(String execId, String conversationId) {
         Map<String, Object> team = jdbc.queryForMap(TEAM_HISTORY_SQL, execId);
         List<AgentTrace.TaskTrace> tasks = jdbc.query(TASK_HISTORY_SQL, (rs, n) -> {
             String state = rs.getString("STATE");
             String taskName = rs.getString("TASK_NAME");
-            String additional = "FAILED".equalsIgnoreCase(state)
-                    ? fetchSchedulerAdditionalInfo(teamName + "_" + taskName)
-                    : null;
             return new AgentTrace.TaskTrace(
                     rs.getString("AGENT_NAME"),
                     taskName,
@@ -417,8 +338,7 @@ public class AgentsService {
                     rs.getString("INPUT"),
                     rs.getString("RESULT"),
                     state,
-                    rs.getLong("DURATION_MS"),
-                    additional);
+                    rs.getLong("DURATION_MS"));
         }, execId);
         List<AgentTrace.ToolTrace> tools = jdbc.query(TOOL_HISTORY_SQL, (rs, n) -> new AgentTrace.ToolTrace(
                 rs.getString("AGENT_NAME"),
@@ -449,25 +369,6 @@ public class AgentsService {
         }
     }
 
-    private String fetchSchedulerAdditionalInfo(String jobName) {
-        try {
-            List<String> rows = jdbc.queryForList(SCHEDULER_INFO_FOR_TASK_SQL, String.class, jobName);
-            return rows.isEmpty() ? null : rows.get(0);
-        } catch (RuntimeException e) {
-            log.debug("Scheduler info lookup failed for job {}: {}", jobName, e.getMessage());
-            return null;
-        }
-    }
-
-    private String fetchLatestTeamSchedulerError() {
-        try {
-            List<String> rows = jdbc.queryForList(LATEST_TEAM_ERROR_SQL, String.class, teamName);
-            return rows.isEmpty() ? null : rows.get(0);
-        } catch (RuntimeException e) {
-            log.debug("Latest team scheduler error lookup failed: {}", e.getMessage());
-            return null;
-        }
-    }
 
     private static String abbrev(String s, int max) {
         if (s == null) return "";

@@ -22,7 +22,7 @@ import java.util.Map;
 // Read-only diagnostic endpoints for the AI agent stack and the
 // heterogeneous-gateway DB_LINKs. All queries hit ADB. Designed to be
 // curl-able from ops (private VCN, no auth). Mirrors the manual
-// sqlcl steps documented in docs/ISSUE_AI_AGENT_RUN_TEAM_PG_LINK_WEDGE.md.
+// sqlcl steps documented in docs/known-limitation-pg-link-gateway.md_LINK_WEDGE.md.
 @RestController
 @RequestMapping("/api/v1/diag")
 public class DiagController {
@@ -187,11 +187,6 @@ public class DiagController {
               + "  SELECT h.team_exec_id, h.team_name, h.state,"
               + "         TO_CHAR(h.start_date AT TIME ZONE 'UTC','YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS started,"
               + "         TO_CHAR(h.end_date   AT TIME ZONE 'UTC','YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS ended,"
-              + "         (SELECT MAX(SUBSTR(d.additional_info, 1, 240))"
-              + "            FROM user_scheduler_job_run_details d"
-              + "           WHERE d.job_name LIKE h.team_name || '_TASK_%'"
-              + "             AND d.log_date BETWEEN h.start_date AND NVL(h.end_date, SYSTIMESTAMP)"
-              + "             AND d.status <> 'SUCCEEDED') AS scheduler_error"
               + "    FROM user_ai_agent_team_history h"
               + "   WHERE h.start_date > SYSTIMESTAMP - NUMTODSINTERVAL(?, 'MINUTE')"
               + "   ORDER BY h.start_date DESC"
@@ -204,25 +199,6 @@ public class DiagController {
         AgentTrace trace = agents.traceForConversation(conversationId);
         if (trace == null) return ResponseEntity.notFound().build();
         return ResponseEntity.ok(trace);
-    }
-
-    // Raw scheduler-job failures for the configured team — same query the
-    // ISSUE doc tells operators to run manually in sqlcl.
-    @GetMapping("/agents/scheduler-failures")
-    public List<Map<String, Object>> schedulerFailures(@RequestParam(defaultValue = "60") int sinceMinutes,
-                                                       @RequestParam(defaultValue = "20") int limit) {
-        return adb.queryForList(
-                "SELECT * FROM ("
-              + "  SELECT job_name,"
-              + "         TO_CHAR(log_date AT TIME ZONE 'UTC','YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS at_utc,"
-              + "         status, additional_info"
-              + "    FROM user_scheduler_job_run_details"
-              + "   WHERE job_name LIKE ? || '_TASK_%'"
-              + "     AND status <> 'SUCCEEDED'"
-              + "     AND log_date > SYSTIMESTAMP - NUMTODSINTERVAL(?, 'MINUTE')"
-              + "   ORDER BY log_date DESC"
-              + ") WHERE ROWNUM <= ?",
-                teamName, sinceMinutes, limit);
     }
 
     // Active end-to-end smoke test. Fires a tiny RUN_TEAM and reports

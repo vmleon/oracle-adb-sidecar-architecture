@@ -55,19 +55,20 @@ generated per-task conversation ids and does not match the caller's id.
 `AgentsService`:
 
 - `runTeam(prompt, null)` creates a conversation via
-  `DBMS_CLOUD_AI.CREATE_CONVERSATION` and returns the id to the client;
-  follow-up requests send that id back.
+  `DBMS_CLOUD_AI.CREATE_CONVERSATION`. Each turn gets its own conversation —
+  the id comes back only so the caller can resolve that turn's trace. Re-running
+  a team against one conversation gets slower as its history grows (8.2 s for a
+  first run, 18.2 s for a second), so threading them is not worth the context.
 - A client-supplied id that raises `ORA-20050` (conversation dropped or
   past retention) triggers one recovery attempt on a freshly created
   conversation — the answer loses prior context instead of failing.
-- Warm-up and keep-warm share a single cached conversation id,
-  recreated on demand if the catalog row disappears.
+- Start-up warm-up creates its own conversation, like any other call.
 
 ## Diagnosing
 
 ```bash
-# keep-warm health — keepwarm_ok lines every ~60-150 s means healthy
-ssh opc@$BACKEND "sudo journalctl -u back --since '-30 min' --no-pager | grep -E 'keepwarm|run_team'"
+# agent-path health — run_team_start/done pairs, plus any recovered runs
+ssh opc@$BACKEND "grep -E 'event=run_team' /home/opc/backend/logs/app.log | tail -20"
 ```
 
 ```sql

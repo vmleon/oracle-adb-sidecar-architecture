@@ -1,43 +1,27 @@
-# Heterogeneous gateway failure modes on `PG_LINK`
+# `RUN_TEAM` reliability on the AI Data Gateway
 
-## Current state
-
-`PG_LINK` is deployed (Liquibase 002) and serves both the federated demo
-(`route=federated` for Postgres-backed tables) and the AI compliance
-agent (`COMPLIANCE_OFFICER` referencing `V_BNK_POLICIES` / `V_BNK_RULES`).
-
-Two failure modes exist on the Oracle-managed Heterogeneous Connectivity
-gateway. Both are mitigated:
-
-- **Mode A** — `HS_IDLE_TIMEOUT = 5 min` cycle. Foreground only.
-  Recoverable per call: catch and retry once.
-- **Mode B** — `DBMS_CLOUD_AI_AGENT` enumeration wedge. Mitigated by an
-  always-on keep-warm on the agent path
-  (`AgentsService.keepWarm()` runs `RUN_TEAM` every 60 s). Without the
-  keep-warm, mode B fires when the agent path goes idle for ~30+ minutes
-  and then a real request lands on a poisoned scheduler-worker session.
+`DBMS_CLOUD_AI_AGENT.RUN_TEAM` occasionally fails on ADB 23.26.x even though the
+agent team completed its work. This file records what the failure actually is,
+how to tell the modes apart, and the explanations that were tried and abandoned.
 
 ## Architecture
 
 ```
-ADMIN session ──┐
-                ├── HS RPC ──► gateway worker on
-DBMS_SCHEDULER ─┤             pvtnlb.adbs-private.oraclevcn.com:1523
-worker session  │             (per HS_SERVICE_ALIAS)
-                │                       │
-DBMS_CLOUD_AI ──┘                       └── network ──► Postgres host:5432
-AGENT path
-(C##CLOUD$SERVICE)
+ADMIN session ──► DBMS_CLOUD_AI_AGENT.RUN_TEAM
+                        │
+                        ├── OCI Generative AI over UTL_HTTP (per agent)
+                        │
+                        └── SQL tools ──► V_BNK_* views
+                                            ├── ORAFREE_LINK  (Oracle-to-Oracle)
+                                            └── PG_LINK       (heterogeneous gateway)
 ```
 
-The gateway is OCI-managed: no SSH, no init parameters, no process
-table. The only signal we get is the `ORA-2851x / ORA-02063` message it
-returns. `HS_IDLE_TIMEOUT` is fixed at 5 minutes and not customer-tunable.
+The gateway is OCI-managed: no SSH, no init parameters, no process table. Its
+`HS_IDLE_TIMEOUT` is fixed at 5 minutes and is not customer-tunable.
 
-## Mode A — 5-minute idle drop
+## Mode A — heterogeneous gateway idle drop
 
-Foreground `SELECT @PG_LINK` (or any `V_*` view that resolves through
-the link) succeeds, then sits idle for ~5 minutes. The next call fails:
+A query through `PG_LINK` succeeds, sits idle ~5 minutes, and the next fails:
 
 ```
 ORA-28511: lost RPC connection to heterogeneous remote agent
@@ -45,172 +29,76 @@ ORA-28509: unable to establish a connection to non-Oracle system
 ORA-02063: preceding line from PG_LINK
 ```
 
-The very next call after the failure succeeds — the gateway spawns a
-fresh worker. Mitigations: a probe query on a sub-5-minute cadence in
-the same session pool; `ALTER SESSION CLOSE DATABASE LINK PG_LINK`
-before each batch; or catch `ORA-28511 / ORA-02063` and retry once.
+The call straight after succeeds — the gateway spawns a fresh worker.
 
-## Mode B — agent-path enumeration wedge
+**Mitigation, in place:** `AgentsService.runTeamWithGatewayRetry()` retries once
+on `ORA-28511 / ORA-28509 / ORA-02063`.
 
-### Symptom
+## Mode B — failure on the return path
 
-`DBMS_CLOUD_AI_AGENT.RUN_TEAM(...)` fast-fails on `TASK_0` in **300–450 ms**
-(vs the normal 30–70 s):
+The user-visible failure:
 
 ```
-ORA-20053: Job <TEAM_NAME>_TASK_0 failed: ORA-01010: invalid OCI operation
-ORA-06512: at "C##CLOUD$SERVICE.DBMS_CLOUD$PDBCS_<...>", line 2263
-ORA-06512: at "C##CLOUD$SERVICE.DBMS_CLOUD_AI_AGENT", line 12079
+ORA-20000: ORA-01010: invalid OCI operation
+ORA-06512: at "C##CLOUD$SERVICE.DBMS_CLOUD$PDBCS_<build>", line 2305
+ORA-06512: at "C##CLOUD$SERVICE.DBMS_CLOUD_AI_AGENT", line 14677
 ```
 
-with `ORA-02063: preceding line from PG_LINK` in
-`USER_SCHEDULER_JOB_RUN_DETAILS.ADDITIONAL_INFO`. The wedge persists
-across consecutive `RUN_TEAM` calls until the scheduler reaps the
-poisoned worker (~10 min of agent-path idle).
+**Every task has already SUCCEEDED when this fires.** The catalog shows all
+agents green and the synthesised answer present:
 
-### Mechanism
-
-`RUN_TEAM` runs `TASK_0` in a `DBMS_SCHEDULER` worker session. That
-session caches an OCI handle to the gateway connection for `PG_LINK`.
-After ~5 min idle on the gateway side (`HS_IDLE_TIMEOUT`), the gateway
-closes the connection but the worker keeps the dead OCI handle. The
-next `TASK_0` served by that worker hits the dead handle and fast-fails
-during `USER_DB_LINKS` enumeration. The 300-ms response time is
-diagnostic — it is far too short for any real LLM round-trip.
-
-### Triggers (verified)
-
-- Agent-path idle for ~30+ minutes while UI activity continues on
-  unrelated paths (Risk Dashboard, dashboards backed by `direct` routes,
-  Measurements load button which fires `forkJoin` parallel queries
-  through `route=federated` for `V_POLICIES` / `V_RULES`).
-- Specifically not triggered by 30 min pure idle in our experiments —
-  the trigger involves something past the 5-minute mark with the worker
-  pool aged but not yet reaped.
-
-### Recovery (when the wedge fires without keep-warm)
-
-~10 minutes of agent-path idle clears it. The scheduler reaps the
-poisoned worker; the next `RUN_TEAM` lands on a fresh worker and works.
-
-These actions do NOT recover the wedge:
-
-- Foreground retry on `ORA-01010 / ORA-02063 / ORA-28511`.
-- Foreground keep-warm queries (different session pool from the
-  scheduler worker).
-- `DBMS_CLOUD_AI_AGENT.DROP_TEAM(force => true)` + `CREATE_TEAM`.
-- `DBMS_CLOUD_ADMIN.DROP_DATABASE_LINK('PG_LINK')` + `CREATE_DATABASE_LINK`.
-- A full ADB instance stop/start in the OCI Console.
-
-### Mitigation (always on)
-
-`AgentsService.keepWarm()` is a Spring `@Scheduled(fixedDelay=60000,
-initialDelay=90000)` method that calls `RUN_TEAM` with
-`"keep-warm; reply with OK."` once a minute. It exercises the agent
-path through the same scheduler-worker pool that real requests use, so
-no worker session can sit idle past the 5-minute gateway window.
-
-Configurable via `application.yaml`:
-
-```yaml
-selectai:
-  agents:
-    keepwarm:
-      enabled: true
-      interval-ms: 60000
-      initial-delay-ms: 90000
+```sql
+SELECT task_order, agent_name, state,
+       ROUND((CAST(end_date AS DATE) - CAST(start_date AS DATE)) * 86400) AS secs
+FROM   user_ai_agent_task_history
+WHERE  team_exec_id = '<exec>'
+ORDER  BY task_order;
 ```
 
-Each tick opens its own conversation. A team re-run against one long-lived
-conversation replays a history that only grows, and slows with it — 8.2 s for a
-conversation's first run against 18.2 s for its second. Sharing one id across
-ticks walks the call past `keepWarmJdbc`'s 300 s query timeout, and once a tick
-is cancelled it never completes again: every later tick times out, leaves a
-`RUNNING` row in `USER_AI_AGENT_TEAM_HISTORY`, and leaks UTL_HTTP handles.
+Only the value's trip back to the caller fails, inside the DBMS_CLOUD HTTP
+helper, after a full-length run (50–90 s). The same `DBMS_CLOUD$PDBCS` package
+on this build also emits an unsubstituted `my$cloud_domain` in the Generative AI
+endpoint. Both look like Oracle-side defects in one package; nothing on the
+client side prevents them.
 
-LLM cost is bounded: ~1440 `RUN_TEAM` calls/day × 4 agents per call.
-A cheaper `DBMS_SCHEDULER`-side `SELECT 1 FROM dual@PG_LINK` keep-warm
-might also work but has not been validated against this wedge.
+**Mitigation, in place:** `AgentsService.recoverAnswer()` reads the last
+SUCCEEDED task's `RESULT` for the conversation and returns it, logging
+`event=run_team_recovered`. The caller gets the answer instead of a stack trace.
+A rising rate of that event is the evidence to attach to an Oracle SR.
 
-## Mode C — failure on the return path
+## Telling the modes apart
 
-`RUN_TEAM` raises `ORA-20000: ORA-01010: invalid OCI operation` from the
-DBMS_CLOUD HTTP helper **after every task has reached SUCCEEDED**. Checking
-`USER_AI_AGENT_TASK_HISTORY` for the execution shows all four agents green and
-the synthesised answer present in the last task's `RESULT`; only the value's
-trip back to the caller failed. Elapsed time is a full normal run (50–90 s),
-which separates it from the mode B fast-fail.
+| Elapsed          | Meaning                                                                                                             |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------- |
+| < 100 ms, fail   | Parameter validation — e.g. ORA-20050, see [`run-team-conversation-contract.md`](run-team-conversation-contract.md) |
+| 300–450 ms, fail | Gateway error surfacing through the agent path (mode A)                                                             |
+| 50–90 s, fail    | Mode B — check `user_ai_agent_task_history`; the answer is probably there                                           |
+| 50–150 s, ok     | Normal. Latency varies widely with LLM load; a slow call is not a fault                                             |
 
-The answer is durable, so this is recoverable rather than fatal:
-`AgentsService.recoverAnswer()` reads the last SUCCEEDED task's `RESULT` for the
-conversation and returns it, logging `event=run_team_recovered`. Track that
-event to measure how often the return path breaks — a rising rate is worth an
-Oracle SR, since nothing on the client side can prevent it.
+On ADB 23.26.x, `RUN_TEAM` creates **no user-visible `DBMS_SCHEDULER` jobs**.
+`USER_SCHEDULER_JOB_RUN_DETAILS` holds no `<TEAM_NAME>_TASK_%` rows, so any
+diagnosis depending on `additional_info` from that view returns nothing.
+Per-task truth lives in `USER_AI_AGENT_TASK_HISTORY`, joined to
+`USER_AI_AGENT_TEAM_HISTORY` on `TEAM_EXEC_ID`.
 
-## Diagnosing live state
+## Abandoned explanations
 
-On ADB 23.26.x, `RUN_TEAM` creates **no user-visible `DBMS_SCHEDULER` jobs** —
-`USER_SCHEDULER_JOB_RUN_DETAILS` holds no `<TEAM_NAME>_TASK_%` rows, so
-`/diag/agents/scheduler-failures` and the `scheduler_additional_info` field on
-`run_team_failed` are always empty. Per-task detail lives in
-`USER_AI_AGENT_TASK_HISTORY` (`TEAM_EXEC_ID`, `TASK_ORDER`, `AGENT_NAME`,
-`STATE`, `RESULT`) instead; join it to `USER_AI_AGENT_TEAM_HISTORY` on
-`TEAM_EXEC_ID`.
+Recorded so they are not re-tried. Each was measured, not assumed.
 
-Distinguish wedge from cold reconnect by elapsed time:
+| Theory                                                                                                 | Why it was dropped                                                                                                                                                                                                                |
+| ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **A scheduler-worker "wedge" caches a dead `PG_LINK` OCI handle**, fast-failing `TASK_0` in 300–450 ms | This build runs no per-task scheduler jobs, so the mechanism cannot apply. Observed failures take 50–90 s with every task SUCCEEDED.                                                                                              |
+| **A 60 s keep-warm `RUN_TEAM` prevents that wedge**                                                    | It never completed once. Sharing one conversation across ticks made each run slower until it passed the 300 s query timeout; every tick was then cancelled, leaving `RUNNING` rows and leaked UTL_HTTP handles. Removed entirely. |
+| **Re-using a conversation across turns hangs `RUN_TEAM`**                                              | Measured: first run 8.2 s, second run on the same conversation 18.2 s. It degrades with history length but does not hang. Each turn still gets a fresh conversation, because the degradation is real.                             |
+| **Two `RUN_TEAM` calls starting together collide**                                                     | Three simultaneous pairs, 6/6 succeeded.                                                                                                                                                                                          |
+| **The keep-warm caused the failures and the latency spikes**                                           | With it disabled, 10/10 succeeded but latency was unchanged — mean 74 s vs 80 s, max 144 s vs 152 s. The spikes are LLM variance.                                                                                                 |
 
-| Elapsed          | Meaning                                                                                                                                                |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| < 100 ms, fail   | Parameter validation, not the gateway — e.g. ORA-20050, see [`run-team-conversation-contract.md`](run-team-conversation-contract.md) |
-| 300–450 ms, fail | Mode B wedge                                                                                                                                           |
-| 70–150 s, ok     | Cold reconnect after long idle (mode A surfacing through the agent path)                                                                               |
-| 30–70 s, ok      | Normal warm path                                                                                                                                       |
-
-Operational endpoints:
-
-```
-GET /api/v1/diag/agents/sanity                 # active end-to-end smoke (RUN_TEAM)
-GET /api/v1/diag/agents/scheduler-failures?sinceMinutes=15&limit=20
-GET /api/v1/diag/links                         # USER_DB_LINKS rows
-GET /api/v1/diag/links/probe                   # foreground SELECT 1 FROM dual@<LINK>
-GET /api/v1/diag/links/scheduler-probe         # one-shot DBMS_SCHEDULER job
-GET /actuator/logfile  (Range: bytes=-50000)   # search for `event=keepwarm_ok` / `event=keepwarm_failed`
-```
-
-If `scheduler-failures` is empty and the keep-warm log lines appear at
-~60–150 s intervals, the agent path is healthy.
-
-## Lessons
-
-1. **The agent path runs in a separate session pool from foreground
-   SQL.** Foreground link probes can be green while `RUN_TEAM` is
-   wedged. The only meaningful health signal for the agent feature is
-   an actual `RUN_TEAM` invocation.
-2. **`HS_IDLE_TIMEOUT` is fixed at 5 minutes and not tunable.** Any
-   keep-warm has to exercise the link more often than that, and through
-   the same session pool the consumer uses. JDBC keep-warm doesn't help
-   the agent path; foreground `DBMS_SCHEDULER` probes might or might
-   not, depending on worker affinity.
-3. **Latency variance is normal, not a wedge signal.** `RUN_TEAM` after
-   long idle can take 70–150 s on cold reconnect; that's mode A's cost
-   showing through the agent path. A single slow call is not the wedge.
-4. **The wedge is a cached-dead-connection bug, not a presence bug.**
-   Earlier diagnoses claimed `PG_LINK` in `USER_DB_LINKS` would wedge
-   `RUN_TEAM` regardless of usage. Continuous traffic at a sub-5-minute
-   cadence keeps the path healthy across `PG_LINK` only, with views,
-   and with the full compliance agent referencing PG-backed views. The
-   fix is to keep the path warm, not to remove the link.
-5. **Fast-fail times are diagnostic.** A 300-ms `RUN_TEAM` failure is a
-   wedge; a 30+ s failure is something else (LLM error, timeout,
-   network). Always check the elapsed time on
-   `USER_SCHEDULER_JOB_RUN_DETAILS` and the back log.
+The durable lesson: **latency variance is not a fault signal**, and a failing
+`RUN_TEAM` is not evidence that the agents failed. Read
+`user_ai_agent_task_history` before theorising.
 
 ## Related
 
-- [`docs/federated-queries.md`](federated-queries.md) — gateway link
-  setup for all three engines, plus the `ORA-17008` mid-Liquibase
-  recovery path.
-- [`docs/known-limitation-mongodb-federation.md`](known-limitation-mongodb-federation.md)
-  — `MONGO_LINK` SELECTs fail with an unrelated DataDirect ODBC bug;
-  `MONGO_CRED` and `MONGO_LINK` exist but no view consumes them.
-- [`docs/troubleshooting.md`](troubleshooting.md) — day-two diagnostics.
+- [`federated-queries.md`](federated-queries.md) — gateway link setup for all engines.
+- [`known-limitation-mongodb-federation.md`](known-limitation-mongodb-federation.md) — MongoDB is not federated.
+- [`troubleshooting.md`](troubleshooting.md) — day-two diagnostics and the log guide.

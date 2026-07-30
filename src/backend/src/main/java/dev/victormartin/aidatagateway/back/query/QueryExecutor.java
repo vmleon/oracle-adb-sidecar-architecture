@@ -1,6 +1,9 @@
 package dev.victormartin.aidatagateway.back.query;
 
 import java.util.ArrayList;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.List;
 import java.util.Map;
 
@@ -12,6 +15,8 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class QueryExecutor {
+
+    private static final Logger log = LoggerFactory.getLogger(QueryExecutor.class);
 
     private final JdbcTemplate adbJdbc;
     private final JdbcTemplate oracleJdbc;
@@ -38,16 +43,41 @@ public class QueryExecutor {
         };
     }
 
+    // Which engine actually served the call, for the log line. `federated`
+    // always lands on ADB; `direct` goes to whichever store owns the table.
+    private static String engineFor(String table, boolean federated) {
+        if (federated) return "adb";
+        return switch (table) {
+            case "accounts", "transactions" -> "oracle";
+            case "policies", "rules" -> "postgres";
+            case "support_tickets" -> "mongo";
+            default -> "unknown";
+        };
+    }
+
     public QueryResult run(String table, String route) {
+        boolean federated = "federated".equals(route);
+        String engine = engineFor(table, federated);
         long t0 = System.nanoTime();
         try {
             List<Map<String, Object>> rows = call(table, route);
             double elapsed = (System.nanoTime() - t0) / 1_000_000.0;
+            log.info("event=db_query table={} route={} engine={} rows={} elapsed_ms={}",
+                    table, route, engine, rows.size(), String.format("%.1f", elapsed));
             return QueryResult.success(rows, elapsed);
         } catch (Exception e) {
             double elapsed = (System.nanoTime() - t0) / 1_000_000.0;
+            log.warn("event=db_query_failed table={} route={} engine={} elapsed_ms={} cause=\"{}\"",
+                    table, route, engine, String.format("%.1f", elapsed),
+                    abbrev(e.getMessage(), 240));
             return QueryResult.failure(e, elapsed);
         }
+    }
+
+    private static String abbrev(String s, int max) {
+        if (s == null) return "";
+        String flat = s.replaceAll("\\s+", " ").trim();
+        return flat.length() <= max ? flat : flat.substring(0, max) + "...";
     }
 
     private List<Map<String, Object>> call(String table, String route) {

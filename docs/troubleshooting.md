@@ -148,6 +148,78 @@ sudo systemctl status backend --no-pager                 # backend
 sudo systemctl status nginx --no-pager                   # frontend
 ```
 
+## Mining the backend log
+
+Every backend line is `key=value` after a `rid=` request id, so the log is
+greppable without a parser. The application log is
+`/home/opc/backend/logs/app.log`, also reachable without SSH:
+
+```bash
+curl -s -H 'Range: bytes=-200000' http://<lb_public_ip>/actuator/logfile
+```
+
+### Follow one request end to end
+
+Every HTTP response carries `X-Request-Id`. That id tags every line the request
+produced — controller, agents, Select AI tools and each datasource:
+
+```bash
+curl -si http://<lb>/api/v1/agents -d '{"prompt":"..."}' -H 'Content-Type: application/json' | grep -i x-request-id
+grep 'rid=<id>' app.log
+```
+
+### The event vocabulary
+
+| Event | Emitted when | Useful fields |
+| ----- | ------------ | ------------- |
+| `http` | every request completes | `method` `path` `status` `elapsed_ms` |
+| `db_query` | a table is read | `table` `route` `engine` `rows` `elapsed_ms` |
+| `db_query_failed` | that read throws | plus `cause` |
+| `run_team_start` | an agent run begins | `conv` `team` `prompt_chars` `threaded` |
+| `run_team_done` | it returns normally | `elapsed_ms` `answer_chars` |
+| `run_team_recovered` | `RUN_TEAM` threw but the answer was recovered from the catalog | `elapsed_ms` `answer_chars` `ora` |
+| `run_team_failed` | it threw with nothing recoverable | `elapsed_ms` `ora` |
+| `run_team_retry` | the gateway idle-drop retry fired | `attempt` `cause` |
+| `agent_task` | one line per agent in the run | `agent` `task` `state` `duration_ms` |
+| `agent_tool` | one line per Select AI tool call | `tool` `agent` `duration_ms` `output_chars` |
+| `readiness` | a component changes state | `component` `state` `from` `cause` |
+
+`http`, readiness polls and `/actuator` are logged at DEBUG so they don't drown
+the file; everything above is INFO or higher.
+
+### Patterns worth watching
+
+```bash
+# Are agent runs failing, and are they being recovered?
+grep -c run_team_recovered app.log ; grep -c run_team_failed app.log
+
+# Latency profile of agent runs (spikes are LLM variance, not faults)
+grep -o 'event=run_team_done.*elapsed_ms=[0-9]*' app.log | grep -o 'elapsed_ms=[0-9]*' | sort -t= -k2 -n | tail
+
+# Which agent or tool is slow
+grep 'event=agent_task' app.log | grep -o 'agent=[A-Z_]* .*duration_ms=[0-9]*'
+grep 'event=agent_tool' app.log | grep -o 'tool=[A-Z_]* .*duration_ms=[0-9]*'
+
+# direct vs federated cost per table
+grep 'event=db_query ' app.log | grep -o 'table=[a-z_]* route=[a-z]* engine=[a-z]* .*elapsed_ms=[0-9.]*'
+
+# Did a tier flap?
+grep 'event=readiness' app.log
+```
+
+A `run_team_recovered` line means the agents finished but `RUN_TEAM` failed on
+its return path — the user still got an answer. See
+[`known-limitation-pg-link-gateway.md`](known-limitation-pg-link-gateway.md).
+
+### Turn up detail temporarily
+
+Logging levels are live-adjustable through actuator, no restart:
+
+```bash
+curl -X POST http://<lb>/actuator/loggers/dev.victormartin.aidatagateway \
+  -H 'Content-Type: application/json' -d '{"configuredLevel":"DEBUG"}'
+```
+
 ## Inspect rendered configs and vars
 
 When behaviour doesn't match your Terraform variables, read what
@@ -206,42 +278,40 @@ sudo bash /var/lib/cloud/instance/scripts/part-001 \
 
 ## AI agent path health
 
-`RUN_TEAM` (the `/api/v1/agents` endpoint) runs in a `DBMS_SCHEDULER`
-worker session that caches its own `PG_LINK` gateway connection. That
-connection dies after `HS_IDLE_TIMEOUT = 5 min`; without continuous
-traffic on the agent path, the worker's cached handle goes stale and
-the next `RUN_TEAM` fast-fails on `TASK_0` with `ORA-01010 / ORA-02063
-from PG_LINK`. The backend ships an always-on keep-warm
-(`AgentsService.keepWarm()`, every 60 s) that prevents this.
+`RUN_TEAM` (the `/api/v1/agents` endpoint) reaches OCI Generative AI over
+UTL_HTTP and reads `V_BNK_*` views, some of which resolve through the
+`PG_LINK` heterogeneous gateway. Two things can go wrong; both are mitigated
+in `AgentsService` and both are visible in the log.
 
-Quick health probes (run from your laptop against the public LB, or
-from ops against `$BACKEND:8080`):
+Quick health probes (run from your laptop against the public LB, or from ops
+against `$BACKEND:8080`):
 
 ```bash
-F=<frontend_ip from ./manage.py status>
+F=<lb_public_ip from ./manage.py status>
 
-# Agent end-to-end (expect ok=true; elapsed 30-70s normal, 70-150s on cold reconnect)
-curl -sS --max-time 120 http://$F/api/v1/diag/agents/sanity | jq .
+# Agent end-to-end (expect ok=true; 50-90 s is normal, 150 s still normal under load)
+curl -sS --max-time 200 http://$F/api/v1/diag/agents/sanity | jq .
 
-# Recent scheduler-side failures (expect [] when keep-warm is doing its job)
-curl -sS http://$F/api/v1/diag/agents/scheduler-failures?sinceMinutes=15 | jq .
+# Did any run fail on the return path but still deliver an answer?
+curl -sS -H 'Range: bytes=-200000' http://$F/actuator/logfile | grep -c run_team_recovered
 
-# Confirm keep-warm is firing in the back log
-curl -sS -H 'Range: bytes=-50000' http://$F/actuator/logfile | grep -E "keepwarm_(ok|failed)" | tail -10
+# Per-agent and per-tool timings for recent runs
+curl -sS -H 'Range: bytes=-200000' http://$F/actuator/logfile | grep -E "event=agent_(task|tool)" | tail -20
 ```
 
-If sanity fast-fails (~300-450 ms, `ORA-02063 from PG_LINK`), the
-keep-warm has stopped or never started. Check:
+Read a failure by elapsed time, not by the ORA number — `ORA-01010` appears in
+more than one mode:
 
-- `curl http://$F/actuator/scheduledtasks` — should list
-  `keepWarm` with `fixedDelay=60000`.
-- back log for `event=keepwarm_failed` — recent entries indicate why.
-- `selectai.agents.keepwarm.enabled` in `/home/opc/backend/config/application.yaml`
-  on the backend host — must be `true`.
+- **50–90 s and failed** — the agents almost certainly finished. Check
+  `user_ai_agent_task_history` for the execution; if every task is `SUCCEEDED`
+  the answer was recoverable and the log will carry `event=run_team_recovered`.
+- **300–450 ms and failed** — a gateway error surfacing on the agent path. One
+  transparent retry is already applied; a second consecutive failure means the
+  gateway is genuinely down, so check `/api/v1/diag/links/probe`.
+- **Slow but successful** — not a fault. `RUN_TEAM` latency varies with LLM
+  load; spikes to 150 s were measured on a healthy system.
 
-Recovery if a wedge has already fired: ~10 min of idle clears it (the
-scheduler reaps the poisoned worker). Drop+recreate of the link or
-team does NOT recover. Full diagnosis in
+Full diagnosis, and the explanations that were tried and abandoned, in
 [`known-limitation-pg-link-gateway.md`](./known-limitation-pg-link-gateway.md).
 
 ## Federated query sanity SQL

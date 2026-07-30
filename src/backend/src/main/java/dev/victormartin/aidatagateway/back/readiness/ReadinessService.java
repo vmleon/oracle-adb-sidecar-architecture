@@ -9,6 +9,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 
 import org.bson.Document;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -26,7 +28,10 @@ public class ReadinessService {
     private final MongoTemplate mongo;
     private final String teamName;
 
+    private static final Logger log = LoggerFactory.getLogger(ReadinessService.class);
+
     private final Set<String> everReady = ConcurrentHashMap.newKeySet();
+    private final Map<String, String> lastState = new ConcurrentHashMap<>();
 
     public ReadinessService(
             @Qualifier("adbJdbc") JdbcTemplate adbJdbc,
@@ -87,16 +92,34 @@ public class ReadinessService {
 
     private String collect(String name, CompletableFuture<Boolean> future) {
         boolean ok;
+        String cause = null;
         try {
             ok = future.get(PROBE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         } catch (Exception e) {
             ok = false;
+            Throwable root = e.getCause() == null ? e : e.getCause();
+            cause = root.getMessage();
         }
-        if (ok) {
-            everReady.add(name);
-            return "ready";
+        String state = ok ? "ready" : (everReady.contains(name) ? "error" : "bootstrapping");
+        if (ok) everReady.add(name);
+        // The browser polls readiness every 5 s, so only transitions are worth
+        // a line — they mark exactly when a tier came up or fell over.
+        String previous = lastState.put(name, state);
+        if (!state.equals(previous)) {
+            if ("ready".equals(state)) {
+                log.info("event=readiness component={} state={} from={}", name, state, previous);
+            } else {
+                log.warn("event=readiness component={} state={} from={} cause=\"{}\"",
+                        name, state, previous, abbrev(cause, 200));
+            }
         }
-        return everReady.contains(name) ? "error" : "bootstrapping";
+        return state;
+    }
+
+    private static String abbrev(String s, int max) {
+        if (s == null) return "";
+        String flat = s.replaceAll("\\s+", " ").trim();
+        return flat.length() <= max ? flat : flat.substring(0, max) + "...";
     }
 
     private String overall(Map<String, String> components) {

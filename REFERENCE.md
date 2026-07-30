@@ -72,9 +72,9 @@ features to see. Keep the view names stable — they are the NL2SQL surface.
   issues a `listCollections` or `find` against the target. MongoDB stays
   connected directly by the application in this repo. Reproducer:
   [`docs/known-limitation-mongodb-federation.md`](docs/known-limitation-mongodb-federation.md).
-- **The PostgreSQL gateway drops idle sessions after ~5 minutes**, and agent-path
-  enumeration can wedge it durably. A keep-warm probe is always on to hold the
-  session open. Details:
+- **The PostgreSQL gateway drops idle sessions after ~5 minutes** and the
+  timeout is not tunable, so the first call after an idle period can fail and
+  the next succeeds. One transparent retry absorbs it. Details:
   [`docs/known-limitation-pg-link-gateway.md`](docs/known-limitation-pg-link-gateway.md).
 - **Check the support matrix for your target versions** before pinning them:
 

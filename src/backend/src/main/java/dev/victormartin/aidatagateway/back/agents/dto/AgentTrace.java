@@ -17,11 +17,7 @@ public record AgentTrace(
             String input,
             String result,
             String state,
-            long durationMillis,
-            // additional_info from USER_SCHEDULER_JOB_RUN_DETAILS for the
-            // scheduler job that backed this task. Null on success; carries
-            // the real ORA-* (e.g. ORA-02063 from PG_LINK) on failure.
-            String schedulerAdditionalInfo) {}
+            long durationMillis) {}
 
     public record ToolTrace(
             String agentName,
