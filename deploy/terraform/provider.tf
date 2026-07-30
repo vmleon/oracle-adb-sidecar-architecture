@@ -30,3 +30,14 @@ provider "oci" {
   # Authenticate as the ~/.oci/config profile chosen by `./manage.py setup`.
   config_file_profile = var.config_file_profile
 }
+
+# IAM is a global service whose writes are only accepted in the tenancy home
+# region: creating a dynamic group or policy anywhere else fails with
+# "403-NotAllowed, Please go to your home region". identity.tf uses this alias
+# so the rest of the stack can still deploy into any region.
+provider "oci" {
+  alias               = "home"
+  tenancy_ocid        = var.tenancy_ocid
+  region              = var.home_region
+  config_file_profile = var.config_file_profile
+}

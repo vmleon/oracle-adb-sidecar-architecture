@@ -39,7 +39,8 @@ locals {
 # Scoped to this one database by OCID rather than to every Autonomous Database
 # in the compartment, so the grants below cannot widen as the compartment fills.
 resource "oci_identity_dynamic_group" "adb_resource_principal" {
-  count = var.create_identity_resources ? 1 : 0
+  provider = oci.home
+  count    = var.create_identity_resources ? 1 : 0
 
   compartment_id = var.tenancy_ocid
   name           = "dg-${local.identity_name}"
@@ -48,7 +49,8 @@ resource "oci_identity_dynamic_group" "adb_resource_principal" {
 }
 
 resource "oci_identity_policy" "adb_resource_principal" {
-  count = var.create_identity_resources ? 1 : 0
+  provider = oci.home
+  count    = var.create_identity_resources ? 1 : 0
 
   compartment_id = var.tenancy_ocid
   name           = "policy-${local.identity_name}"

@@ -61,6 +61,11 @@ Until those statements exist, the Select AI profiles are created but every call
 to them fails to authenticate, and the policy-doc vector index cannot read its
 source bucket.
 
+IAM is global but only accepts writes in the tenancy **home region**, so the two
+objects are created through a provider alias pinned to it while the rest of the
+stack deploys into whatever region you picked. `setup` detects the home region
+and writes it to `terraform.tfvars` as `home_region`; nothing else needs doing.
+
 > Terraform creates the dynamic group through the legacy identity API, which
 > targets the tenancy's **default** identity domain. If the deployment must live
 > in a non-default domain, create the dynamic group there by hand and set

@@ -222,6 +222,13 @@ def _list_compartments(oci_config):
         return None
 
 
+def _passwords_exist() -> bool:
+    return all(env_get(k) for k in (
+        "ADB_ADMIN_PASSWORD", "ORACLE_DB_PASSWORD",
+        "POSTGRES_DB_PASSWORD", "MONGO_DB_PASSWORD",
+    ))
+
+
 def _generate_password(length=20):
     """Oracle-compliant: starts with a letter, 2+ specials, 2+ digits."""
     letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -295,6 +302,7 @@ def _render_tfvars() -> bool:
         tenancy_ocid=env_get("OCI_TENANCY_OCID"),
         compartment_ocid=env_get("OCI_COMPARTMENT_OCID"),
         region=env_get("OCI_REGION"),
+        home_region=env_get("OCI_HOME_REGION"),
         genai_region=env_get("OCI_GENAI_REGION"),
         genai_compartment_id=env_get("OCI_GENAI_COMPARTMENT_ID"),
         project_name=env_get("PROJECT_NAME"),
@@ -350,8 +358,13 @@ def setup():
     if regions:
         labels = [f"{r['name']} (home)" if r["is_home"] else r["name"] for r in regions]
         region = _select("Region:", labels, default=labels[0]).replace(" (home)", "")
+        # IAM writes only land in the home region; identity.tf targets it explicitly.
+        home_region = next(
+            (r["name"] for r in regions if r["is_home"]), region
+        )
     else:
         region = _text("Region", default=sdk_config["region"])
+        home_region = _text("Home region (IAM writes go here)", default=region)
     sdk_config["region"] = region
 
     compartments = _list_compartments(sdk_config)
@@ -418,13 +431,14 @@ def setup():
     console.print(Panel(
         f"Profile:           {profile}\n"
         f"Region:            {region}\n"
+        f"Home region:       {home_region} (IAM writes)\n"
         f"Compartment:       {compartment_ocid}\n"
         f"GenAI region:      {genai_region}\n"
         f"GenAI compartment: {genai_compartment_id}\n"
         f"SSH key:           {ssh_private_key_path}\n"
         f"Project name:      {project_name}\n"
         f"Identity objects:  {'created by Terraform' if create_identity else 'left to an administrator'}\n"
-        f"DB passwords:      4 generated (adb/oracle/postgres/mongo) — saved to .env",
+        f"DB passwords:      {'reused from .env' if _passwords_exist() else 'generated (adb/oracle/postgres/mongo)'}",
         title="Configuration summary",
     ))
     if not click.confirm("Save this configuration?", default=True):
@@ -439,11 +453,14 @@ def setup():
         "OCI_GENAI_REGION": genai_region,
         "OCI_GENAI_COMPARTMENT_ID": genai_compartment_id,
         "PROJECT_NAME": project_name,
+        "OCI_HOME_REGION": home_region,
         "CREATE_IDENTITY_RESOURCES": "true" if create_identity else "false",
-        "ADB_ADMIN_PASSWORD": _generate_password(),
-        "ORACLE_DB_PASSWORD": _generate_password(),
-        "POSTGRES_DB_PASSWORD": _generate_password(),
-        "MONGO_DB_PASSWORD": _generate_password(),
+        # Reuse any password already in .env. Re-running setup against a live
+        # deployment must not rotate credentials the running databases hold.
+        "ADB_ADMIN_PASSWORD": env_get("ADB_ADMIN_PASSWORD") or _generate_password(),
+        "ORACLE_DB_PASSWORD": env_get("ORACLE_DB_PASSWORD") or _generate_password(),
+        "POSTGRES_DB_PASSWORD": env_get("POSTGRES_DB_PASSWORD") or _generate_password(),
+        "MONGO_DB_PASSWORD": env_get("MONGO_DB_PASSWORD") or _generate_password(),
         "SSH_PRIVATE_KEY_PATH": ssh_private_key_path,
         "SSH_PUBLIC_KEY": ssh_public_key,
     }.items():

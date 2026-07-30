@@ -6,6 +6,13 @@ variable "region" {
   type = string
 }
 
+# IAM writes are only accepted in the home region, so identity.tf targets it
+# through the oci.home provider alias even when the stack deploys elsewhere.
+variable "home_region" {
+  description = "Tenancy home region, e.g. us-phoenix-1."
+  type        = string
+}
+
 variable "config_file_profile" {
   type = string
 }
