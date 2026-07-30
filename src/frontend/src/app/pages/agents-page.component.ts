@@ -543,8 +543,11 @@ export class AgentsPageComponent {
     this.promptModel = "";
     this.loading.set(true);
 
+    // Each question is its own investigation, so every turn gets a fresh
+    // conversation rather than threading the previous one. The id that comes
+    // back is kept only to resolve that turn's execution trace.
     this.agents
-      .run({ prompt: text, conversationId: this.conversationId() })
+      .run({ prompt: text })
       .subscribe({
         next: (resp) => {
           this.conversationId.set(resp.conversationId);

@@ -49,6 +49,23 @@ public class AgentsService {
     private static final String TEAM_HISTORY_SQL =
             "SELECT TEAM_NAME, STATE FROM USER_AI_AGENT_TEAM_HISTORY WHERE TEAM_EXEC_ID = ?";
 
+    // RUN_TEAM can raise from its return path (ORA-20000 wrapping ORA-01010,
+    // inside the DBMS_CLOUD HTTP helper) *after* every task has already
+    // reached SUCCEEDED. The synthesised answer is durable in the catalog at
+    // that point, so the request is recoverable: read the last task's result
+    // rather than handing the caller a stack trace for work that completed.
+    private static final String RECOVER_ANSWER_SQL = """
+            SELECT RESULT FROM (
+                SELECT t.RESULT
+                FROM USER_AI_AGENT_TASK_HISTORY t
+                JOIN USER_AI_AGENT_TEAM_HISTORY h ON h.TEAM_EXEC_ID = t.TEAM_EXEC_ID
+                WHERE h.CONVERSATION_ID = ?
+                  AND h.STATE = 'SUCCEEDED'
+                  AND t.STATE = 'SUCCEEDED'
+                ORDER BY h.START_DATE DESC, t.TASK_ORDER DESC
+            ) WHERE ROWNUM = 1
+            """;
+
     private static final String TASK_HISTORY_SQL = """
             SELECT AGENT_NAME, TASK_NAME, TASK_ORDER, INPUT, RESULT, STATE,
                    EXTRACT(DAY FROM (END_DATE - START_DATE)) * 86400000 +
@@ -175,14 +192,26 @@ public class AgentsService {
         } catch (RuntimeException e) {
             refreshAdbPoolIfPoisoned(e);
             long failedMs = System.currentTimeMillis() - t0;
-            String schedulerInfo = fetchLatestTeamSchedulerError();
-            log.error("event=run_team_failed conv={} team={} elapsed_ms={} ora=\"{}\" scheduler_additional_info=\"{}\"",
-                    conversationId, teamName, failedMs,
-                    abbrev(e.getMessage(), 240), abbrev(schedulerInfo, 240));
-            String enriched = (e.getMessage() == null ? "RUN_TEAM failed" : e.getMessage())
-                    + (schedulerInfo == null ? ""
-                       : " | scheduler additional_info: " + schedulerInfo);
-            throw new RuntimeException(enriched, e);
+
+            // The agents may well have finished before the call blew up. If the
+            // catalog says the run SUCCEEDED, serve that answer — the user gets
+            // their result instead of an ORA stack for completed work.
+            String recovered = recoverAnswer(conversationId);
+            if (recovered != null && !recovered.isBlank()) {
+                log.warn("event=run_team_recovered conv={} team={} elapsed_ms={} answer_chars={} ora=\"{}\"",
+                        conversationId, teamName, failedMs, recovered.length(),
+                        abbrev(e.getMessage(), 240));
+                answer = recovered;
+            } else {
+                String schedulerInfo = fetchLatestTeamSchedulerError();
+                log.error("event=run_team_failed conv={} team={} elapsed_ms={} ora=\"{}\" scheduler_additional_info=\"{}\"",
+                        conversationId, teamName, failedMs,
+                        abbrev(e.getMessage(), 240), abbrev(schedulerInfo, 240));
+                String enriched = (e.getMessage() == null ? "RUN_TEAM failed" : e.getMessage())
+                        + (schedulerInfo == null ? ""
+                           : " | scheduler additional_info: " + schedulerInfo);
+                throw new RuntimeException(enriched, e);
+            }
         }
         long elapsed = System.currentTimeMillis() - t0;
         log.info("event=run_team_done conv={} team={} elapsed_ms={} answer_chars={}",
@@ -265,6 +294,16 @@ public class AgentsService {
         }
     }
 
+    // Best-effort: never let a recovery attempt mask the original failure.
+    private String recoverAnswer(String conversationId) {
+        try {
+            return jdbc.queryForObject(RECOVER_ANSWER_SQL, String.class, conversationId);
+        } catch (Exception e) {
+            log.debug("No recoverable answer for conversation {}: {}", conversationId, e.getMessage());
+            return null;
+        }
+    }
+
     private static String paramsJson(String conversationId) {
         return "{\"conversation_id\":\"" + conversationId + "\"}";
     }
@@ -273,17 +312,16 @@ public class AgentsService {
         return template.queryForObject(CREATE_CONVERSATION_SQL, String.class);
     }
 
-    // Warm-up and keep-warm share one long-lived conversation so the
-    // catalog doesn't accumulate a row per tick. Recreated on demand if
-    // it disappears (retention cleanup, manual DROP_CONVERSATION).
+    // Every tick gets its own conversation. Re-running a team against one
+    // long-lived conversation replays a history that only ever grows, and the
+    // call slows down with it — measured at 8.2 s for a conversation's first
+    // run and 18.2 s for its second. Sharing one id across ticks eventually
+    // pushed the call past the query timeout, after which it never recovered.
     private volatile String keepWarmConversationId;
 
     private String keepWarmConversation() {
-        String id = keepWarmConversationId;
-        if (id == null) {
-            id = createConversation(keepWarmJdbc);
-            keepWarmConversationId = id;
-        }
+        String id = createConversation(keepWarmJdbc);
+        keepWarmConversationId = id;
         return id;
     }
 

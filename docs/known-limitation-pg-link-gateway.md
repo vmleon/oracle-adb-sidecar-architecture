@@ -121,11 +121,41 @@ selectai:
       initial-delay-ms: 90000
 ```
 
+Each tick opens its own conversation. A team re-run against one long-lived
+conversation replays a history that only grows, and slows with it — 8.2 s for a
+conversation's first run against 18.2 s for its second. Sharing one id across
+ticks walks the call past `keepWarmJdbc`'s 300 s query timeout, and once a tick
+is cancelled it never completes again: every later tick times out, leaves a
+`RUNNING` row in `USER_AI_AGENT_TEAM_HISTORY`, and leaks UTL_HTTP handles.
+
 LLM cost is bounded: ~1440 `RUN_TEAM` calls/day × 4 agents per call.
 A cheaper `DBMS_SCHEDULER`-side `SELECT 1 FROM dual@PG_LINK` keep-warm
 might also work but has not been validated against this wedge.
 
+## Mode C — failure on the return path
+
+`RUN_TEAM` raises `ORA-20000: ORA-01010: invalid OCI operation` from the
+DBMS_CLOUD HTTP helper **after every task has reached SUCCEEDED**. Checking
+`USER_AI_AGENT_TASK_HISTORY` for the execution shows all four agents green and
+the synthesised answer present in the last task's `RESULT`; only the value's
+trip back to the caller failed. Elapsed time is a full normal run (50–90 s),
+which separates it from the mode B fast-fail.
+
+The answer is durable, so this is recoverable rather than fatal:
+`AgentsService.recoverAnswer()` reads the last SUCCEEDED task's `RESULT` for the
+conversation and returns it, logging `event=run_team_recovered`. Track that
+event to measure how often the return path breaks — a rising rate is worth an
+Oracle SR, since nothing on the client side can prevent it.
+
 ## Diagnosing live state
+
+On ADB 23.26.x, `RUN_TEAM` creates **no user-visible `DBMS_SCHEDULER` jobs** —
+`USER_SCHEDULER_JOB_RUN_DETAILS` holds no `<TEAM_NAME>_TASK_%` rows, so
+`/diag/agents/scheduler-failures` and the `scheduler_additional_info` field on
+`run_team_failed` are always empty. Per-task detail lives in
+`USER_AI_AGENT_TASK_HISTORY` (`TEAM_EXEC_ID`, `TASK_ORDER`, `AGENT_NAME`,
+`STATE`, `RESULT`) instead; join it to `USER_AI_AGENT_TEAM_HISTORY` on
+`TEAM_EXEC_ID`.
 
 Distinguish wedge from cold reconnect by elapsed time:
 
