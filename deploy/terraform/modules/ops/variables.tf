@@ -103,7 +103,8 @@ variable "oci_genai_region" {
   default = "us-chicago-1"
 }
 
+# A compartment OCID is an identifier, not a secret — same treatment as
+# compartment_ocid, and it has to stay readable in the policy-statement output.
 variable "oci_genai_compartment_id" {
-  type      = string
-  sensitive = true
+  type = string
 }

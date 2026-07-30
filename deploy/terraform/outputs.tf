@@ -31,6 +31,11 @@ output "adb_admin_password" {
   sensitive = true
 }
 
+output "resource_principal_statements" {
+  description = "Policy statements the gateway's resource principal needs. Created automatically unless create_identity_resources is false, in which case hand these to a tenancy administrator."
+  value       = local.resource_principal_statements
+}
+
 output "rag_bucket_name" {
   value = oci_objectstorage_bucket.banking_rag_docs.name
 }

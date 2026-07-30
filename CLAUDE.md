@@ -38,7 +38,9 @@ scripts that tell the reader to `cd deploy/terraform && terraform ...`.
 - **No key material in variables.** The gateway authenticates with
   `OCI$RESOURCE_PRINCIPAL`; Terraform authenticates with `config_file_profile`.
   Nothing should reintroduce `oci_private_api_key` / `user_ocid` / `fingerprint`
-  into tfvars, cloud-init, or Liquibase parameters.
+  into tfvars, cloud-init, or Liquibase parameters. The dynamic group and policy
+  backing the resource principal are Terraform resources in `identity.tf`, in
+  the tenancy root, gated on `create_identity_resources`.
 - **All ADB DDL must be idempotent** — every credential, database link, profile,
   agent, tool, and team wrapped in a DROP-if-exists guard. A half-applied
   changelog otherwise cannot converge on retry.

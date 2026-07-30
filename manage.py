@@ -304,6 +304,7 @@ def _render_tfvars() -> bool:
         mongo_db_password=env_get("MONGO_DB_PASSWORD"),
         ssh_public_key=env_get("SSH_PUBLIC_KEY"),
         ssh_private_key_path=env_get("SSH_PRIVATE_KEY_PATH"),
+        create_identity_resources=env_get("CREATE_IDENTITY_RESOURCES", "true"),
     ))
     tfvars_file.chmod(0o600)
     console.print(f"[green]Generated:[/green] {tfvars_file}")
@@ -403,6 +404,17 @@ def setup():
 
     project_name = _text("Project name (used for OCI resource naming):", default="aidatagateway")
 
+    console.print(
+        "\n[bold]Resource principal[/bold]\n"
+        "The gateway authenticates to OCI GenAI and Object Storage as itself, which "
+        "needs a dynamic group and a policy in the tenancy root. Creating them "
+        "requires tenancy-level IAM rights; answer no if you don't have them and an "
+        "administrator will apply the statements instead."
+    )
+    create_identity = click.confirm(
+        "Create the dynamic group and policy?", default=True
+    )
+
     console.print(Panel(
         f"Profile:           {profile}\n"
         f"Region:            {region}\n"
@@ -411,6 +423,7 @@ def setup():
         f"GenAI compartment: {genai_compartment_id}\n"
         f"SSH key:           {ssh_private_key_path}\n"
         f"Project name:      {project_name}\n"
+        f"Identity objects:  {'created by Terraform' if create_identity else 'left to an administrator'}\n"
         f"DB passwords:      4 generated (adb/oracle/postgres/mongo) — saved to .env",
         title="Configuration summary",
     ))
@@ -426,6 +439,7 @@ def setup():
         "OCI_GENAI_REGION": genai_region,
         "OCI_GENAI_COMPARTMENT_ID": genai_compartment_id,
         "PROJECT_NAME": project_name,
+        "CREATE_IDENTITY_RESOURCES": "true" if create_identity else "false",
         "ADB_ADMIN_PASSWORD": _generate_password(),
         "ORACLE_DB_PASSWORD": _generate_password(),
         "POSTGRES_DB_PASSWORD": _generate_password(),
@@ -501,6 +515,15 @@ def provision():
         sys.exit(1)
 
     console.print("\n[green]Infrastructure provisioned.[/green]")
+
+    if env_get("CREATE_IDENTITY_RESOURCES", "true").lower() != "true":
+        console.print(
+            "\n[yellow]Identity objects were not created.[/yellow] Select AI cannot "
+            "authenticate until a tenancy administrator applies these statements:\n"
+        )
+        result = _tf("output", "-raw", "resource_principal_statements", capture=True)
+        console.print(result.stdout.strip() or "  (run: terraform output resource_principal_statements)")
+
     console.print(
         "Cloud-init now runs Ansible on each instance and Liquibase from ops; "
         "this takes several minutes."

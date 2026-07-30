@@ -123,9 +123,12 @@ END;
 /
 ```
 
-This requires a tenancy dynamic group matching the database and a policy
-granting it `use generative-ai-family` (and `read objects` for any bucket a
-vector index reads). See [`DEPLOY.md`](DEPLOY.md), "Tenancy prerequisites".
+This requires a dynamic group matching the database and a policy granting it
+`use generative-ai-family` (and `read objects` for any bucket a vector index
+reads). Both are Terraform resources here — `oci_identity_dynamic_group` and
+`oci_identity_policy` in `deploy/terraform/identity.tf` — created in the tenancy
+root so one policy can reach compartments anywhere in the tenancy. See
+[`DEPLOY.md`](DEPLOY.md), "Tenancy permissions".
 
 **The profile also needs an outbound network ACL:**
 

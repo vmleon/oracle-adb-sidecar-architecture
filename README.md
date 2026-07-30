@@ -147,9 +147,9 @@ database/
 
 ## Getting started
 
-Follow [`DEPLOY.md`](DEPLOY.md): prerequisites (including the tenancy dynamic
-group and policy the gateway's resource principal needs), then the `manage.py`
-verbs in order — `setup` → `build` → `provision` → `status` — with `reset` to
+Follow [`DEPLOY.md`](DEPLOY.md): prerequisites (including the tenancy IAM
+rights Terraform needs to create the gateway's resource-principal grants), then
+the `manage.py` verbs in order — `setup` → `build` → `provision` → `status` — with `reset` to
 re-run database provisioning and `clean` to tear everything down.
 
 ## Documentation map

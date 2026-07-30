@@ -24,28 +24,47 @@ against all four database engines.
 | Python                    | 3.10+   | `pip install -r requirements.txt`                  |
 | SSH keypair               | RSA     | e.g. `~/.ssh/id_rsa` + `id_rsa.pub`                |
 
-### Tenancy prerequisites
+### Tenancy permissions
 
 The Autonomous AI Database authenticates to OCI Generative AI and Object
 Storage **as itself**, through a resource principal — no API key or private key
 is ever placed in Terraform variables, on an instance, or in the database. That
-requires two tenancy-level grants that Terraform does not create:
+needs a dynamic group matching the database and a policy granting it access.
 
-1. A **dynamic group** matching the ADB, for example:
+**Terraform creates both** (`deploy/terraform/identity.tf`), in the tenancy
+root — the only compartment guaranteed to be an ancestor of both the GenAI
+compartment and the RAG bucket's compartment. So the identity you run Terraform
+as needs, in addition to the usual compartment rights:
 
-   ```
-   ALL {resource.type = 'autonomousdatabase', resource.compartment.id = '<compartment-ocid>'}
-   ```
+```
+allow group <your-group> to manage dynamic-groups in tenancy
+allow group <your-group> to manage policies in tenancy
+```
 
-2. A **policy** granting that dynamic group what the demo uses:
+The dynamic group is scoped to this one database by OCID, so the grants cannot
+widen as the compartment fills:
 
-   ```
-   allow dynamic-group <dg-name> to use generative-ai-family in compartment <genai-compartment>
-   allow dynamic-group <dg-name> to read objects in compartment <compartment> where target.bucket.name = 'banking-rag-docs'
-   ```
+```
+ALL {resource.type='autonomousdatabase', resource.id='<this-adb-ocid>'}
+```
 
-Without these, the Select AI profiles are created but every call to them fails
-to authenticate, and the policy-doc vector index cannot read its source bucket.
+**If you don't have tenancy IAM rights**, answer no when `setup` asks (it sets
+`create_identity_resources = false`). Terraform then skips both objects and
+`provision` prints the statements an administrator has to apply. You can also
+read them any time:
+
+```bash
+terraform -chdir=deploy/terraform output resource_principal_statements
+```
+
+Until those statements exist, the Select AI profiles are created but every call
+to them fails to authenticate, and the policy-doc vector index cannot read its
+source bucket.
+
+> Terraform creates the dynamic group through the legacy identity API, which
+> targets the tenancy's **default** identity domain. If the deployment must live
+> in a non-default domain, create the dynamic group there by hand and set
+> `create_identity_resources = false`.
 
 ---
 

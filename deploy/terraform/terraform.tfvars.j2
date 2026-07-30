@@ -18,3 +18,8 @@ mongo_db_password    = "{{ mongo_db_password }}"
 
 oci_genai_region         = "{{ genai_region }}"
 oci_genai_compartment_id = "{{ genai_compartment_id }}"
+
+# The gateway's resource principal needs a dynamic group + policy in the tenancy
+# root. Set false if you lack tenancy IAM rights; an administrator then applies
+# `terraform output resource_principal_statements` by hand.
+create_identity_resources = {{ create_identity_resources }}

@@ -59,9 +59,13 @@ and retrying.
 
 **The gateway authenticates as itself.** Select AI profiles and the vector index
 use `OCI$RESOURCE_PRINCIPAL`, so no API key or private key travels through
-Terraform variables, cloud-init, or Liquibase parameters. The cost is a tenancy
-dynamic group and policy that Terraform does not create — see
-[`DEPLOY.md`](DEPLOY.md).
+Terraform variables, cloud-init, or Liquibase parameters. Terraform creates the
+dynamic group and policy this needs (`identity.tf`), both in the tenancy root
+because that is the only compartment guaranteed to be an ancestor of both the
+GenAI compartment and the RAG bucket. The dynamic group matches this database by
+OCID rather than the compartment, so the grants cannot widen as the compartment
+fills. Deployments without tenancy IAM rights set
+`create_identity_resources = false` and hand the statements to an administrator.
 
 **Terraform stays on four providers.** `oci` plus `archive` (artifact zips),
 `time` (PAR expiry and the ops settle window), and `random` (name suffixes). The
