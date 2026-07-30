@@ -19,8 +19,12 @@ Everything goes through `./manage.py` (executable, shebang — not
 setup → build → provision → status        reset · clean
 ```
 
-`provision` owns `terraform init` (with retry) and `apply`. Don't add docs or
-scripts that tell the reader to `cd deploy/terraform && terraform ...`.
+`provision` owns `terraform init` (with retry) and `apply`; `--yes`
+auto-approves for unattended rebuilds. Don't add docs or scripts that tell the
+reader to `cd deploy/terraform && terraform ...`.
+
+`clean` keeps `.env` and `terraform.tfvars` so a rebuild doesn't need the
+interactive `setup`; `--purge` drops them, `--local-only` skips the destroy.
 
 ## Conventions
 

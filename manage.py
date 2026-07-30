@@ -500,7 +500,8 @@ def build():
 
 
 @cli.command()
-def provision():
+@click.option("--yes", is_flag=True, help="Skip the terraform apply approval prompt")
+def provision(yes):
     """terraform init (with retry) + apply."""
     console.print("[bold]Provision infrastructure[/bold]\n")
 
@@ -526,8 +527,13 @@ def provision():
     if not _terraform_init():
         sys.exit(1)
 
-    console.print("\n[bold]terraform apply[/bold] — review the plan and confirm at the prompt.\n")
-    if _tf("apply").returncode != 0:
+    if yes:
+        console.print("\n[bold]terraform apply[/bold] — auto-approved.\n")
+        apply_args = ("apply", "-auto-approve")
+    else:
+        console.print("\n[bold]terraform apply[/bold] — review the plan and confirm at the prompt.\n")
+        apply_args = ("apply",)
+    if _tf(*apply_args).returncode != 0:
         console.print("[red]terraform apply did not complete.[/red]")
         sys.exit(1)
 
@@ -635,11 +641,19 @@ def reset():
 
 @cli.command()
 @click.option("--yes", is_flag=True, help="Skip confirmation prompts")
-def clean(yes):
-    """terraform destroy + delete local artifacts."""
+@click.option("--local-only", is_flag=True, help="Skip terraform destroy; only remove local artifacts")
+@click.option("--purge", is_flag=True, help="Also delete .env and terraform.tfvars (next deploy needs a full setup)")
+def clean(yes, local_only, purge):
+    """Destroy cloud resources and remove local artifacts.
+
+    Keeps .env and terraform.tfvars by default, so `provision` can rebuild the
+    same deployment without re-answering `setup`. Use --purge to drop those too.
+    """
     console.print("[bold]Clean up[/bold]\n")
 
-    if (TF_DIR / "terraform.tfstate").exists():
+    if local_only:
+        console.print("[dim]--local-only: leaving cloud resources alone.[/dim]")
+    elif (TF_DIR / "terraform.tfstate").exists():
         console.print("[yellow]Terraform state found — cloud resources may exist.[/yellow]")
         if yes or click.confirm("Run `terraform destroy`?", default=True):
             if not shutil.which("terraform"):
@@ -654,13 +668,12 @@ def clean(yes):
     else:
         console.print("[dim]No Terraform state — skipping cloud cleanup.[/dim]")
 
-    if not (yes or click.confirm("Delete local artifacts (.env, tfvars, build output)?", default=True)):
+    scope = "build output, Terraform state" + (", .env and tfvars" if purge else "")
+    if not (yes or click.confirm(f"Delete local artifacts ({scope})?", default=True)):
         console.print("[yellow]Local cleanup cancelled.[/yellow]")
         return
 
     files = [
-        ENV_FILE,
-        TF_DIR / "terraform.tfvars",
         TF_DIR / "terraform.tfstate",
         TF_DIR / "terraform.tfstate.backup",
         TF_DIR / "tfplan",
@@ -674,6 +687,8 @@ def clean(yes):
         FRONTEND_DIR / ".angular",
         FRONTEND_DIR / "node_modules",
     ]
+    if purge:
+        files += [ENV_FILE, TF_DIR / "terraform.tfvars"]
 
     deleted = []
     for f in files:
@@ -691,6 +706,14 @@ def clean(yes):
             console.print(f"  {item}")
     else:
         console.print("Nothing to clean.")
+
+    if purge:
+        console.print("\nNext deploy starts from [bold]./manage.py setup[/bold].")
+    else:
+        console.print(
+            "\n[dim].env and terraform.tfvars kept — rebuild with "
+            "[/dim][bold]./manage.py build && ./manage.py provision[/bold]"
+        )
 
 
 if __name__ == "__main__":

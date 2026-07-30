@@ -16,7 +16,7 @@ against all four database engines.
 
 | Tool                      | Version | Notes                                              |
 | ------------------------- | ------- | -------------------------------------------------- |
-| OCI tenancy + compartment | —       | See "Tenancy prerequisites" below                  |
+| OCI tenancy + compartment | —       | See "Tenancy permissions" below                    |
 | OCI CLI                   | current | `oci setup config` complete (`~/.oci/config`)      |
 | Terraform                 | ≥ 1.5   | `oracle/oci` provider (pulled automatically)       |
 | Java                      | 23      | Temurin or Oracle JDK — builds the Spring Boot jar |
@@ -126,7 +126,8 @@ deployment artifacts, so this has to run before `provision`.
 
 Runs `terraform init` (retrying on transient provider-registry failures) then
 `terraform apply` from `deploy/terraform`, so you review the plan and confirm at
-the prompt. It creates the VCN, the Autonomous AI Database 26ai, four compute
+the prompt. Pass `--yes` to auto-approve, which is what unattended rebuilds
+want. It creates the VCN, the Autonomous AI Database 26ai, four compute
 instances, the load balancer, the Object Storage bucket, and a 7-day
 pre-authenticated request per artifact.
 
@@ -180,9 +181,17 @@ deploy half-applied the ADB changelog.
 ./manage.py clean
 ```
 
-Runs `terraform destroy` (after confirming) and then deletes the local
-artifacts — `.env`, `terraform.tfvars`, Terraform state, and the build output.
-Pass `--yes` to skip both prompts.
+Runs `terraform destroy` (after confirming) and then deletes the local build
+output and Terraform state. `.env` and `terraform.tfvars` are **kept**, so the
+same deployment can be rebuilt with `build` + `provision` without re-answering
+`setup` — useful when you want fresh cloud resources under the same
+configuration and passwords.
+
+| Flag           | Effect                                                          |
+| -------------- | ---------------------------------------------------------------- |
+| `--yes`        | Skip both confirmation prompts                                  |
+| `--local-only` | Leave cloud resources alone; only tidy the working tree         |
+| `--purge`      | Also delete `.env` and `terraform.tfvars` — next deploy needs `setup` |
 
 ---
 
