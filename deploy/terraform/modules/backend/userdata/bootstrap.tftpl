@@ -31,9 +31,28 @@ wait_for_rpm_lock() {
 }
 wait_for_rpm_lock
 
-dnf upgrade -y
-dnf install oracle-epel-release-el9 -y
-dnf install ansible-core -y
+# A private instance reaches the yum mirrors through the NAT gateway, and in
+# the first seconds of its life that path is not always up: dnf then fails
+# with "Curl error (7): Couldn't connect to server". Under `set -e` a single
+# blip kills the whole tier before Ansible ever runs, which is unrecoverable
+# without a rebuild. Retry with linear backoff so a transient mirror or
+# routing hiccup costs seconds instead of the instance.
+dnf_retry() {
+  local -i tries=0 max=10
+  until dnf "$@"; do
+    tries=$((tries+1))
+    if [ $tries -ge $max ]; then
+      echo "FATAL: dnf $* failed after $max attempts" >&2
+      return 1
+    fi
+    echo "dnf $* failed (attempt $tries/$max); retrying in $((tries*10))s..." >&2
+    sleep $((tries*10))
+  done
+}
+
+dnf_retry upgrade -y
+dnf_retry install oracle-epel-release-el9 -y
+dnf_retry install ansible-core -y
 
 # ADB wallet
 curl -4 --fail -sS "${wallet_par_full_path}" -o /home/opc/wallet.zip.b64

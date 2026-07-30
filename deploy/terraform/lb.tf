@@ -50,10 +50,17 @@ resource "oci_load_balancer_backend_set" "lb-backend-set-backend" {
   load_balancer_id = oci_load_balancer.lb.id
   policy           = "ROUND_ROBIN"
 
+  # Liveness, not readiness. /actuator/health aggregates every datasource
+  # health indicator, so one unreachable production database made it block
+  # for ~30 s and return 503 — the load balancer then marked the whole
+  # backend unhealthy and served 502 for every /api/* route, taking the UI
+  # down entirely over a single degraded tier. /api/v1/health answers from
+  # the application alone, so per-component state stays where it belongs:
+  # /api/v1/ready, which the UI already renders as status chips.
   health_checker {
     port     = "8080"
     protocol = "HTTP"
-    url_path = "/actuator/health"
+    url_path = "/api/v1/health"
   }
 }
 

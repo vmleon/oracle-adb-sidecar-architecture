@@ -148,6 +148,20 @@ resource "oci_core_security_list" "app_seclist" {
       max = 8080
     }
   }
+
+  # frontend to backend, within this subnet. The load balancer routes /api/*
+  # straight to the backend, so nginx's own /api/ proxy_pass is a fallback —
+  # but without this rule that fallback fails, and any path that does reach
+  # nginx first answers 502 instead of proxying.
+  ingress_security_rules {
+    protocol  = local.tcp
+    source    = local.app_subnet_cidr
+    stateless = false
+    tcp_options {
+      min = 8080
+      max = 8080
+    }
+  }
 }
 
 resource "oci_core_security_list" "db_seclist" {
