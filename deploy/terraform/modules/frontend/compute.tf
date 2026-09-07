@@ -39,6 +39,10 @@ resource "oci_core_instance" "instance" {
     memory_in_gbs = 16
   }
 
+  instance_options {
+    are_legacy_imds_endpoints_disabled = true
+  }
+
   create_vnic_details {
     subnet_id                 = var.subnet_id
     assign_public_ip          = false
