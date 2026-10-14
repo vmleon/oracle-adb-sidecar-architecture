@@ -9,7 +9,7 @@ relevant host, read the logs, inspect the rendered configs.
 
 ```bash
 ./manage.py status        # prints ops public IP + the SSH command
-ssh -i ~/.ssh/id_rsa opc@<ops_public_ip>
+ssh opc@<ops_public_ip>
 ```
 
 The rest of this doc assumes a shell on ops. The `opc` shell sources
@@ -120,15 +120,15 @@ ssh -J opc@<ops_public_ip> opc@<private_ip>
 ```
 
 The same key is authorized on all hosts (see
-`deploy/terraform/modules/*/compute.tf`), so no extra key copy is needed.
+[`deploy/terraform/modules/tier/compute.tf`](../deploy/terraform/modules/tier/compute.tf)), so no extra key copy is needed.
 
 ## Read logs
 
 | What                         | Where                                                 |
 | ---------------------------- | ----------------------------------------------------- |
-| cloud-init (per host)        | `sudo tail -200 /var/log/cloud-init-output.log`       |
+| bootstrap (per host)         | `sudo tail -200 /var/log/aidatagateway-bootstrap.log` |
 | ansible run (per host)       | `tail -200 /home/opc/ansible-playbook.log`            |
-| liquibase + mongosh seed     | `sudo cat /home/opc/ops/liquibase.log` (ops only)     |
+| liquibase + mongosh seed     | `sudo cat /home/opc/liquibase.log` (ops only)         |
 | systemd unit (any tier)      | `sudo journalctl -u <unit> -n 200 --no-pager`         |
 | systemd unit (live)          | `sudo journalctl -u <unit> -f`                        |
 | podman container (databases) | `sudo podman logs --tail 200 <oracle/postgres/mongo>` |
@@ -136,15 +136,16 @@ The same key is authorized on all hosts (see
 Unit names per tier:
 
 - **databases**: `oracle`, `postgres`, `mongo`
-- **backend**: `backend`
+- **backend**: `app`
 - **frontend**: `nginx`
 - **ops**: no long-running service — ops just bootstraps and exits
+- **every tier**: `aidatagateway-bootstrap`, which exits 0 once `/var/lib/aidatagateway/bootstrap.ok` exists
 
 Quick service status:
 
 ```bash
 sudo systemctl status oracle postgres mongo --no-pager   # databases
-sudo systemctl status backend --no-pager                 # backend
+sudo systemctl status app --no-pager                     # backend
 sudo systemctl status nginx --no-pager                   # frontend
 ```
 
@@ -152,7 +153,7 @@ sudo systemctl status nginx --no-pager                   # frontend
 
 Every backend line is `key=value` after a `rid=` request id, so the log is
 greppable without a parser. The application log is
-`/home/opc/backend/logs/app.log`, also reachable without SSH:
+`/opt/app/logs/app.log`, also reachable without SSH:
 
 ```bash
 curl -s -H 'Range: bytes=-200000' http://<lb_public_ip>/actuator/logfile
@@ -230,50 +231,42 @@ echo "back=$BACKEND front=$FRONTEND db=$DATABASES"
 cat  /home/opc/endpoints.env
 
 jq . /home/opc/ansible_params.json        # all rendered passwords + project vars
-ls   /home/opc/ops/wallet/                # ADB wallet (ops)
-cat  /home/opc/backend/config/application.yaml   # backend service config
+ls   /home/opc/wallet/                    # ADB wallet (ops, backend)
+sudo cat /opt/app/config/application.yaml  # backend service config
 
 sudo systemctl cat oracle                 # rendered systemd unit (databases)
-sudo systemctl cat backend                # backend service unit
+sudo systemctl cat app                    # backend service unit
 ```
 
 ## Re-run ansible per tier
 
-If cloud-init failed partway through, re-run the playbook by hand —
-all roles are idempotent.
+If a playbook failed partway through, re-run it by hand — all roles are
+idempotent. The inventory file is named after the tier (`ops.ini`,
+`databases.ini`, `backend.ini`, `frontend.ini`); the artifact path is the same
+on every tier. For ops, `./manage.py deploy` runs this from your laptop.
 
 ```bash
-# ops
 sudo ANSIBLE_PYTHON_INTERPRETER=/usr/bin/python3 ansible-playbook \
-    -i /home/opc/ops.ini --extra-vars @/home/opc/ansible_params.json \
-    /home/opc/ansible_ops/server.yaml
-
-# databases
-sudo ANSIBLE_PYTHON_INTERPRETER=/usr/bin/python3 ansible-playbook \
-    -i /home/opc/databases.ini --extra-vars @/home/opc/ansible_params.json \
-    /home/opc/ansible_databases/server.yaml
-
-# backend
-sudo ANSIBLE_PYTHON_INTERPRETER=/usr/bin/python3 ansible-playbook \
-    -i /home/opc/backend.ini --extra-vars @/home/opc/ansible_params.json \
-    /home/opc/ansible_backend/server.yaml
-
-# frontend
-sudo ANSIBLE_PYTHON_INTERPRETER=/usr/bin/python3 ansible-playbook \
-    -i /home/opc/frontend.ini --extra-vars @/home/opc/ansible_params.json \
-    /home/opc/ansible_frontend/server.yaml
+    -i /home/opc/$(hostname -s | sed 's/[0-9a-z]\{2\}$//').ini \
+    --extra-vars @/home/opc/ansible_params.json \
+    /home/opc/artifact/server.yaml
 ```
 
-## Re-run cloud-init bootstrap (when even ansible never ran)
+## Re-run the bootstrap (when even ansible never ran)
 
-If `/var/log/cloud-init-output.log` shows the user-data script aborted
-early (e.g. the `wait_for_dns` guard), the rendered script is still on
-disk. Re-run it directly:
+The bootstrap is a systemd unit with `Restart=on-failure`, so it is already
+retrying every 60 s until `/var/lib/aidatagateway/bootstrap.ok` exists. Read
+why it keeps failing, then let it retry:
 
 ```bash
-sudo ls /var/lib/cloud/instance/scripts/
-sudo bash /var/lib/cloud/instance/scripts/part-001 \
-    2>&1 | sudo tee /var/log/bootstrap-rerun.log
+sudo journalctl -u aidatagateway-bootstrap -n 50 --no-pager
+sudo tail -100 /var/log/aidatagateway-bootstrap.log
+```
+
+To force an immediate attempt:
+
+```bash
+sudo systemctl restart aidatagateway-bootstrap
 ```
 
 ## AI agent path health
@@ -341,15 +334,15 @@ When seed data drifts from what the views expect:
 
 ```bash
 # on ops
-cd /home/opc/ops/database/liquibase/oracle
+cd /home/opc/database/liquibase/oracle
 liquibase --defaults-file=liquibase.properties rollback-count 2
 liquibase --defaults-file=liquibase.properties update
 
-cd /home/opc/ops/database/liquibase/postgres
+cd /home/opc/database/liquibase/postgres
 liquibase --defaults-file=liquibase.properties rollback-count 2
 liquibase --defaults-file=liquibase.properties update
 
 # Mongo: init.js is idempotent on first run; to re-seed manually:
 mg admin --eval 'db.support_tickets.drop()'
-mg /home/opc/ops/database/mongo/init.js
+mg /home/opc/database/mongo/init.js
 ```

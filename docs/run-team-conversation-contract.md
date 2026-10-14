@@ -68,7 +68,7 @@ generated per-task conversation ids and does not match the caller's id.
 
 ```bash
 # agent-path health — run_team_start/done pairs, plus any recovered runs
-ssh opc@$BACKEND "grep -E 'event=run_team' /home/opc/backend/logs/app.log | tail -20"
+ssh opc@$BACKEND "grep -E 'event=run_team' /opt/app/logs/app.log | tail -20"
 ```
 
 ```sql

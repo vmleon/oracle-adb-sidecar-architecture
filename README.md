@@ -123,18 +123,16 @@ Tier-by-tier detail and the reasoning behind each choice are in
 ## Layout
 
 ```
-manage.py                 CLI: setup, build, provision, status, reset, clean
+manage.py                 CLI: setup, build, provision, deploy, status, reset, teardown
+tests/                    pure-function tests for the CLI helpers
 deploy/
   terraform/              OCI stack — VCN, ADB 26ai, 4 computes, LB, Object Storage
     modules/adbs/         Autonomous AI Database 26ai + wallet
-    modules/ops/          Bastion compute + OCI Bastion service
-    modules/frontend/     nginx + Angular dist
-    modules/backend/      Spring Boot jar via systemd
-    modules/databases/    Podman host with 3 systemd container units
+    modules/tier/         One compute per tier, with the self-retrying bootstrap
   ansible/                One playbook per tier, run locally by cloud-init
     ops/opstools/         Jump-host tools, SQLcl, Liquibase for all four engines
     frontend/webstack/    nginx + SPA
-    backend/appstack/     JDK 23 + jar + systemd
+    backend/appstack/     Java 25 + jar + systemd
     databases/dbstack/    Oracle Free 26ai, PostgreSQL 18, MongoDB 8 containers
 src/
   backend/                Java 25 / Gradle / Spring Boot 4.1
@@ -143,14 +141,22 @@ database/
   liquibase/{adb,oracle,postgres}/   YAML changelogs + liquibase.properties.j2
   mongo/init.js                       mongosh schema seed
   banking-policy-docs/                Markdown policy docs behind the RAG index
+docs/                     deep dives, indexed by docs/README.md
 ```
 
 ## Getting started
 
-Follow [`DEPLOY.md`](DEPLOY.md): prerequisites (including the tenancy IAM
+Install the CLI and its dependencies.
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate && pip install -e ".[dev]"
+```
+
+Then follow [`DEPLOY.md`](DEPLOY.md): prerequisites (including the tenancy IAM
 rights Terraform needs to create the gateway's resource-principal grants), then
-the `manage.py` verbs in order — `setup` → `build` → `provision` → `status` — with `reset` to
-re-run database provisioning and `clean` to tear everything down.
+the `manage.py` verbs in order — `setup` → `build` → `provision` → `status` —
+with `deploy` to re-run database provisioning and `teardown` to tear everything
+down.
 
 ## Documentation map
 

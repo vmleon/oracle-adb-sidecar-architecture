@@ -45,6 +45,26 @@ artifact through a pre-authenticated request and runs its own playbook. There is
 no SSH between instances during provisioning and no control node to keep alive,
 so instances converge in parallel and a failure is isolated to one tier.
 
+**One bootstrap script, owned by systemd.** Every tier is one call of
+`modules/tier`, and the bootstrap in
+[`bootstrap.tftpl`](deploy/terraform/modules/tier/userdata/bootstrap.tftpl)
+copies itself to `/usr/local/sbin` and runs from a unit with
+`Restart=on-failure`, so a dependency that settles late — DNS, the NAT path,
+the yum mirrors — costs one 60-second retry rather than a rebuilt instance. The
+OK sentinel `/var/lib/aidatagateway/bootstrap.ok` is written only after the
+playbook returns success under `pipefail`. The compiled jar, the dist, the
+schema bundle and the wallet are module inputs the same script fetches.
+
+**`deploy` re-runs what cloud-init already ran.** The first schema load happens
+on ops during bootstrap; `./manage.py deploy` runs the same playbook over SSH
+when a changeset changes or the first run failed, and `reset` is `deploy` with
+a confirmation. Because every changeset is idempotent, the re-run is a no-op
+where nothing changed.
+
+**The backend runs as a service account.** The jar lives in `/opt/app`, owned
+by the system user `app`, started by systemd with `java -jar` directly and
+`Restart=on-failure`; `opc` keeps nothing but the fetched payloads.
+
 **The ops instance owns database provisioning.** It is the only host with
 network reach to all four engines plus the ADB private endpoint, so Liquibase
 for ADB, Oracle Free, and PostgreSQL and the `mongosh` init script all run from
@@ -78,10 +98,6 @@ and destination key columns a property graph edge table needs. `local_accounts`
 is mirrored from `V_BNK_ACCOUNTS` at deploy time and `transaction_edges` is
 seeded with synthetic but account-ID-faithful patterns.
 
-**Backend tests are skipped in `build`.** The Spring context-load test wires all
-four datasource beans, which cannot succeed without running databases. Add
-Testcontainers before dropping `-x test`.
-
 ## Datasource layout
 
 | Engine                      | Tables                                                          | Reached directly | Reached via gateway |
@@ -113,3 +129,6 @@ behaviour changes.
 - **Local backend development** uses `SPRING_PROFILES_ACTIVE=local` and
   `src/backend/src/main/resources/application-local.yaml`, which carries
   placeholder credentials to point at local containers and a wallet path.
+- **Gradle provisions its own JDK.** The toolchain targets Java 25 and the
+  Foojay resolver in [`settings.gradle`](src/backend/settings.gradle) downloads
+  it when the local JDK differs, so `build` only needs a JDK that runs Gradle.

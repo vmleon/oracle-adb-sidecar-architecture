@@ -392,7 +392,7 @@ by <host> since <time>`.
 - **Recovery**:
 
   ```bash
-  cd /home/opc/ops/database/liquibase/adb
+  cd /home/opc/database/liquibase/adb
   sudo /usr/local/bin/liquibase --defaults-file=liquibase.properties releaseLocks
   sudo /usr/local/bin/liquibase --defaults-file=liquibase.properties update
   ```
