@@ -1,0 +1,20 @@
+[project]
+name = "aidatagateway-manage"
+version = "0.1.0"
+description = "Autonomous AI Database 26ai attached alongside three production databases as an AI Data Gateway."
+requires-python = ">=3.11"
+dependencies = [
+    "typer>=0.12",
+    "rich>=13.0",
+    "InquirerPy>=0.3",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[tool.setuptools]
+py-modules = ["manage"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

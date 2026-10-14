@@ -1,725 +1,564 @@
 #!/usr/bin/env python3
-"""
-Live AI Hub (AI Data Gateway) — management CLI
-
-Usage:
-    ./manage.py setup      # Configure OCI, write .env, render terraform.tfvars
-    ./manage.py build      # Build the backend jar and the frontend dist
-    ./manage.py provision  # terraform init (with retry) + apply
-    ./manage.py status     # Endpoints, SSH commands, bootstrap progress
-    ./manage.py reset      # Re-run database provisioning on the ops host
-    ./manage.py clean      # terraform destroy + delete local artifacts
-"""
-
+"""Autonomous AI Database 26ai attached alongside three production databases as an AI Data Gateway."""
 import configparser
+import json
 import os
 import re
 import secrets
 import shutil
+import string
 import subprocess
-import sys
-import time
+import urllib.error
+import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-try:
-    import click
-except ImportError:
-    sys.exit("click is required. Run: pip install -r requirements.txt")
-
+import typer
+from dotenv import load_dotenv, set_key
+from InquirerPy import inquirer
 from rich.console import Console
-from rich.panel import Panel
-
-try:
-    from InquirerPy import inquirer
-except ImportError:
-    inquirer = None
-
-try:
-    from jinja2 import Template
-except ImportError:
-    Template = None
-
-try:
-    from dotenv import load_dotenv, set_key
-except ImportError:
-    load_dotenv = None
-    set_key = None
 
 console = Console()
+app = typer.Typer(no_args_is_help=True, add_completion=False, help="AI Data Gateway PoC.")
 
-PROJECT_ROOT = Path(__file__).parent.resolve()
+PROJECT_ROOT = Path(__file__).parent
 ENV_FILE = PROJECT_ROOT / ".env"
 TF_DIR = PROJECT_ROOT / "deploy" / "terraform"
+TFVARS_TPL = TF_DIR / "terraform.tfvars.tpl"
+TFVARS_FILE = TF_DIR / "terraform.tfvars"
 BACKEND_DIR = PROJECT_ROOT / "src" / "backend"
 FRONTEND_DIR = PROJECT_ROOT / "src" / "frontend"
 BACKEND_JAR = BACKEND_DIR / "build" / "libs" / "backend-1.0.0.jar"
-FRONTEND_DIST = FRONTEND_DIR / "dist"
+FRONTEND_DIST = FRONTEND_DIR / "dist" / "frontend" / "browser"
+OCI_CONFIG = Path.home() / ".oci" / "config"
+SSH_KEYS = [Path.home() / ".ssh" / "id_ed25519.pub", Path.home() / ".ssh" / "id_rsa.pub"]
+
+# What the tier bootstrap leaves on the ops box, and what `deploy` re-runs.
+OPS_PLAYBOOK = "/home/opc/artifact/server.yaml"
+OPS_INVENTORY = "/home/opc/ops.ini"
+OPS_PARAMS = "/home/opc/ansible_params.json"
+BOOTSTRAP_OK = "/var/lib/aidatagateway/bootstrap.ok"
+BOOTSTRAP_LOG = "/var/log/aidatagateway-bootstrap.log"
+# The backend's readiness snapshot: one state per database, read by `status`.
+READY_PATH = "/api/v1/ready"
+READY_TIMEOUT = 10
+
+# Seconds an `oci` discovery call may take before it counts as a failure.
+OCI_TIMEOUT = 60
+# The probe gets its own, much shorter deadline: a region that does not host a
+# service can hang instead of refusing, and one unresponsive region must not
+# stall the whole sweep.
+OCI_PROBE_TIMEOUT = 10
+# Wide enough to probe every subscribed region in one pass.
+OCI_PROBE_WORKERS = 16
+# Proves a region hosts OCI Generative AI, which the Select AI profiles and the
+# agent team call. Being subscribed to a region says nothing about that.
+REGION_PROBE = ["generative-ai", "model-collection", "list-models"]
+# Deploying straight into the tenancy root is legitimate, so it is offered as a
+# compartment in its own right rather than only as the ancestor of the others.
+TENANCY_ROOT = "(tenancy root)"
+
+# Tool -> the command that installs it. `setup` refuses to run without these.
+PREREQS = {
+    "terraform": "brew install terraform",
+    "oci": "brew install oci-cli",
+    "ssh": "ships with macOS",
+    "java": "brew install --cask temurin@25",
+    "node": "brew install node",
+    "npm": "brew install node",
+}
+# Command, display name, minimum major version. Gradle runs on the local JDK
+# and provisions the Java 25 toolchain itself, so the floor is what Gradle
+# needs, not what the jar targets.
+VERSION_FLOORS = [
+    (["terraform", "version"], "terraform", 1),
+    (["java", "--version"], "java", 17),
+    (["node", "--version"], "node", 24),
+    (["npm", "--version"], "npm", 11),
+]
+
+# One secret per principal, all generated into .env by `setup`.
+PASSWORD_KEYS = ["ADB_ADMIN_PASSWORD", "ORACLE_DB_PASSWORD", "POSTGRES_DB_PASSWORD", "MONGO_DB_PASSWORD"]
+CONFIG_KEYS = (
+    "PROJECT_NAME",
+    "OCI_PROFILE",
+    "TENANCY_OCID",
+    "COMPARTMENT_OCID",
+    "REGION",
+    # The workload region and the home region are different values with
+    # different uses: everything the PoC creates lives in REGION, but IAM
+    # identity resources exist only in HOME_REGION, so both are stored.
+    "HOME_REGION",
+    # OCI Generative AI runs in a subset of regions; the gateway's Select AI
+    # profiles point at one of them, which need not be the workload region.
+    "GENAI_REGION",
+    "GENAI_COMPARTMENT_OCID",
+    "SSH_PUBLIC_KEY",
+    "SSH_INGRESS_CIDR",
+    "CREATE_IDENTITY_RESOURCES",
+    *PASSWORD_KEYS,
+)
+DEFAULT_PROJECT_NAME = "aidatagateway"
+
+SPECIALS = "#_-"
+_SECRET_FLAGS = {"-password", "--password", "-pwd"}
 
 
-# ============================================================================
-# ENV HELPERS
-# ============================================================================
+def _generate_password(length: int = 20) -> str:
+    """Letter first, at least two digits and two specials — safe unquoted in Oracle."""
+    rnd = secrets.SystemRandom()
+    pw = [rnd.choice(string.ascii_letters)]
+    pw += [rnd.choice(string.digits) for _ in range(2)]
+    pw += [rnd.choice(SPECIALS) for _ in range(2)]
+    pool = string.ascii_letters + string.digits + SPECIALS
+    pw += [rnd.choice(pool) for _ in range(length - len(pw))]
+    tail = pw[1:]
+    rnd.shuffle(tail)
+    pw[1:] = tail
+    return "".join(pw)
 
-def env_load():
-    if load_dotenv and ENV_FILE.exists():
-        load_dotenv(ENV_FILE, override=True)
+
+def _run(cmd, **kw) -> subprocess.CompletedProcess:
+    """Run a command, echoing it with passwords after a secret flag (or in a KEY=value secret) redacted."""
+    def _redact(i, a):
+        s = str(a)
+        if i > 0 and any(str(cmd[i - 1]).endswith(f) for f in _SECRET_FLAGS):
+            return "***"
+        if any(s.startswith(f"{f}=") for f in _SECRET_FLAGS):
+            return f"{s.split('=', 1)[0]}=***"
+        return s
+
+    safe = [_redact(i, a) for i, a in enumerate(cmd)]
+    console.print(f"[dim]$ {' '.join(safe)}[/dim]")
+    return subprocess.run(cmd, **kw)
 
 
-def env_save(key: str, value: str):
-    """Write one key to .env, leaving the rest of the file intact."""
+def _sh(cmd, **kw) -> subprocess.CompletedProcess:
+    """Run a command and exit with its code when it fails."""
+    try:
+        return _run(cmd, check=True, **kw)
+    except subprocess.CalledProcessError as e:
+        console.print(f"[red]{cmd[0]} exited {e.returncode}.[/red]")
+        raise typer.Exit(e.returncode)
+
+
+def load_config() -> dict:
     if not ENV_FILE.exists():
-        ENV_FILE.touch()
-    if set_key:
-        set_key(str(ENV_FILE), key, value)
-        return
-    lines = [
-        line for line in ENV_FILE.read_text().splitlines()
-        if not line.startswith(f"{key}=")
-    ]
-    lines.append(f'{key}="{value}"')
-    ENV_FILE.write_text("\n".join(lines) + "\n")
+        console.print("[red].env not found. Run `./manage.py setup` first.[/red]")
+        raise typer.Exit(1)
+    load_dotenv(ENV_FILE)
+    return {k: os.getenv(k) for k in CONFIG_KEYS}
 
 
-def env_get(key: str, default: str = None) -> str:
-    env_load()
-    return os.getenv(key, default)
+def render_template(text: str, mapping: dict) -> str:
+    """Substitute ${VAR} placeholders (stdlib string.Template, no Jinja)."""
+    return string.Template(text).substitute(mapping)
 
 
-# ============================================================================
-# PROMPT HELPERS (InquirerPy when available, plain prompts otherwise)
-# ============================================================================
+def _parse_major(text: str) -> int | None:
+    """First integer on the first line of a `--version` output, or None.
 
-def _select(message, choices, default=None):
-    if inquirer:
-        return inquirer.select(message=message, choices=choices, default=default).execute()
-    console.print(f"[bold]{message}[/bold]")
-    for i, c in enumerate(choices, 1):
-        console.print(f"  {i}. {c}")
-    return choices[click.prompt("Number", type=int, default=1) - 1]
+    Version banners differ wildly (`openjdk 21.0.2`, `v22.11.0`,
+    `Terraform v1.9.5`), but every one of them leads with its major number.
+    """
+    line = text.strip().splitlines()[0] if text.strip() else ""
+    m = re.search(r"(\d+)", line)
+    return int(m.group(1)) if m else None
 
 
-def _fuzzy(message, choices, default=None):
-    if inquirer:
-        return inquirer.fuzzy(
-            message=message, choices=choices, default=default, max_height="60%"
-        ).execute()
-    return _select(message, choices, default)
+def _check_version(cmd: list[str], name: str, min_major: int) -> bool:
+    """True when `cmd` reports a major version at or above `min_major`.
 
-
-def _text(message, default=None):
-    if inquirer:
-        return inquirer.text(message=message, default=default or "").execute()
-    return click.prompt(message, default=default)
-
-
-# ============================================================================
-# TOOL PREFLIGHT
-# ============================================================================
-
-def _oci_sdk_available() -> bool:
-    try:
-        import oci  # noqa: F401
-        return True
-    except ImportError:
+    Returns False rather than raising when the binary is absent, so it
+    composes with `_check_prereqs` instead of duplicating its check.
+    """
+    if not shutil.which(cmd[0]):
+        console.print(f"  [red]✗[/red] {name} not found — need {min_major}+")
         return False
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    major = _parse_major(r.stdout or r.stderr)
+    if major is None or major < min_major:
+        console.print(f"  [red]✗[/red] {name} {major or 'unknown'} — need {min_major}+")
+        return False
+    console.print(f"  [green]✓[/green] {name} {major}")
+    return True
 
 
-def _print_tools(required=("terraform", "ssh"), need_oci_sdk=True) -> bool:
-    """Show which external tools are on PATH so missing ones surface up front."""
-    def mark(ok):
-        return "[green]found[/green]" if ok else "[red]MISSING[/red]"
+def _check_prereqs(prereqs: dict[str, str]) -> None:
+    """Exit listing an install hint for every missing tool.
 
-    parts = [f"{t} {mark(bool(shutil.which(t)))}" for t in required]
-    if need_oci_sdk:
-        parts.append(f"oci SDK {mark(_oci_sdk_available())}")
-    console.print("Tooling: " + " · ".join(parts) + "\n")
-
-    missing = [t for t in required if not shutil.which(t)]
-    if need_oci_sdk and not _oci_sdk_available():
-        missing.append("oci SDK (pip install -r requirements.txt)")
+    A hint per tool is the difference between "sqlcl missing" and knowing
+    which command installs it, which is the whole cost of a first run.
+    """
+    missing = [(t, h) for t, h in prereqs.items() if not shutil.which(t)]
+    for tool in prereqs:
+        if tool not in dict(missing):
+            console.print(f"  [green]✓[/green] {tool}")
+    for tool, hint in missing:
+        console.print(f"  [red]✗[/red] {tool} — install with: {hint}")
     if missing:
-        console.print(f"[red]Missing:[/red] {', '.join(missing)}")
-        return False
-    return True
+        raise typer.Exit(1)
 
 
-def _check_version(cmd, args, name, min_major) -> bool:
+def _check_versions(floors=VERSION_FLOORS) -> None:
+    """Exit when any tool is older than its floor; every floor is reported first."""
+    results = [_check_version(cmd, name, floor) for cmd, name, floor in floors]
+    if not all(results):
+        raise typer.Exit(1)
+
+
+def _oci_profiles(path: Path = OCI_CONFIG) -> list[str]:
+    """Profile names from the OCI CLI config, DEFAULT first. Empty when absent."""
+    if not Path(path).exists():
+        return []
+    cfg = configparser.ConfigParser()
+    cfg.read(path)
+    return (["DEFAULT"] if cfg.defaults() else []) + cfg.sections()
+
+
+def _oci_run(args: list[str], profile: str, region: str | None = None,
+             timeout: int = OCI_TIMEOUT) -> subprocess.CompletedProcess | None:
+    """Run the `oci` CLI, or None when it times out or the binary is absent.
+
+    Discovery is read-only and runs many regions wide at once, so it queries
+    directly rather than echoing every call through `_run`.
+    """
+    cmd = ["oci", *args, "--profile", profile, "--output", "json"]
+    if region:
+        cmd += ["--region", region]
     try:
-        result = subprocess.run([cmd] + args, capture_output=True, text=True, timeout=15)
-        output = result.stdout + result.stderr
-        match = re.search(r"(\d+)\.\d+", output)
-        if not match:
-            console.print(f"[red]Error:[/red] Could not parse {name} version from: {output.strip()}")
-            return False
-        major = int(match.group(1))
-        if major < min_major:
-            console.print(f"[red]Error:[/red] {name} {major} found, need {min_major}+")
-            return False
-        console.print(f"  {name} {match.group(0)} [green]OK[/green]")
-        return True
-    except FileNotFoundError:
-        console.print(f"[red]Error:[/red] {name} not found. Install {name} {min_major}+ and try again.")
-        return False
-
-
-# ============================================================================
-# OCI HELPERS
-# ============================================================================
-
-def _read_oci_config():
-    oci_config_path = Path.home() / ".oci" / "config"
-    if not oci_config_path.exists():
-        console.print(f"[red]Error:[/red] OCI config not found at {oci_config_path}")
-        console.print("Configure it first: [cyan]oci setup config[/cyan]")
-        sys.exit(1)
-
-    config = configparser.ConfigParser()
-    config.read(oci_config_path)
-    profiles = list(config.sections())
-    if config.defaults():
-        profiles.insert(0, "DEFAULT")
-    return profiles, config
-
-
-def _list_regions(oci_config):
-    import oci
-    try:
-        identity_client = oci.identity.IdentityClient(oci_config)
-        tenancy_id = oci_config["tenancy"]
-        home_region_key = identity_client.get_tenancy(tenancy_id).data.home_region_key
-        subscriptions = identity_client.list_region_subscriptions(tenancy_id).data
-        regions = [
-            {"name": s.region_name, "is_home": s.region_key == home_region_key}
-            for s in subscriptions
-        ]
-        regions.sort(key=lambda r: (not r["is_home"], r["name"]))
-        return regions
-    except Exception as e:
-        console.print(f"[yellow]Warning:[/yellow] Could not fetch regions: {e}")
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except (subprocess.TimeoutExpired, FileNotFoundError):
         return None
 
 
-def _list_compartments(oci_config):
-    import oci
-    try:
-        identity_client = oci.identity.IdentityClient(oci_config)
-        tenancy_id = oci_config["tenancy"]
-        tenancy = identity_client.get_compartment(tenancy_id).data
-        compartments = [{"name": f"{tenancy.name} (root)", "id": tenancy_id}]
-        response = oci.pagination.list_call_get_all_results(
-            identity_client.list_compartments,
-            compartment_id=tenancy_id,
-            compartment_id_in_subtree=True,
-            access_level="ACCESSIBLE",
-        )
-        compartments += [
-            {"name": c.name, "id": c.id}
-            for c in response.data if c.lifecycle_state == "ACTIVE"
-        ]
-        return compartments
-    except Exception as e:
-        console.print(f"[yellow]Warning:[/yellow] Could not fetch compartments: {e}")
+def _oci_json(args: list[str], profile: str, region: str | None = None,
+              timeout: int = OCI_TIMEOUT):
+    """Parsed `data` from an `oci` call, or None on any failure."""
+    r = _oci_run(args, profile, region, timeout)
+    if r is None or r.returncode != 0:
         return None
+    try:
+        return json.loads(r.stdout)["data"]
+    except (json.JSONDecodeError, KeyError):
+        return None  # a `list` that matches nothing prints nothing at all
 
 
-def _passwords_exist() -> bool:
-    return all(env_get(k) for k in (
-        "ADB_ADMIN_PASSWORD", "ORACLE_DB_PASSWORD",
-        "POSTGRES_DB_PASSWORD", "MONGO_DB_PASSWORD",
-    ))
+def _oci_tenancy(profile: str, path: Path = OCI_CONFIG) -> str | None:
+    """The tenancy OCID for a profile, straight out of the OCI CLI config."""
+    if not Path(path).exists():
+        return None
+    cfg = configparser.ConfigParser()
+    cfg.read(path)
+    if profile == "DEFAULT":
+        return cfg.defaults().get("tenancy")
+    return cfg[profile].get("tenancy") if cfg.has_section(profile) else None
 
 
-def _generate_password(length=20):
-    """Oracle-compliant: starts with a letter, 2+ specials, 2+ digits."""
-    letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-    digits = "0123456789"
-    specials = "#_-"
-
-    password = [secrets.choice(letters)]
-    password += [secrets.choice(specials) for _ in range(2)]
-    password += [secrets.choice(digits) for _ in range(2)]
-    alphabet = letters + digits + specials
-    password += [secrets.choice(alphabet) for _ in range(length - 5)]
-
-    tail = password[1:]
-    secrets.SystemRandom().shuffle(tail)
-    password[1:] = tail
-    return "".join(password)
+def _oci_regions(profile: str) -> tuple[list[str], str | None]:
+    """Subscribed region names and the home region name, from one subscription list."""
+    data = _oci_json(["iam", "region-subscription", "list"], profile) or []
+    subscribed = sorted(d["region-name"] for d in data)
+    # The home region is one entry of that same list, and identity resources
+    # exist nowhere else — a dynamic group or policy applied against the
+    # workload region lands in the wrong region and says so only obliquely.
+    home = next((d["region-name"] for d in data if d.get("is-home-region")), None)
+    return subscribed, home
 
 
-# ============================================================================
-# TERRAFORM HELPERS
-# ============================================================================
+def _regions_with_service(regions: list[str], probe: list[str], profile: str) -> list[str]:
+    """The subset of `regions` where the probed service answers."""
+    def answers(region: str) -> bool:
+        r = _oci_run(probe, profile, region, OCI_PROBE_TIMEOUT)
+        # A timeout counts as "not available" exactly like a refusal: a region
+        # without the service can hold the connection open instead of saying no.
+        return r is not None and r.returncode == 0
 
-def _tf(*args, capture=False):
-    return subprocess.run(
-        ["terraform", f"-chdir={TF_DIR}", *args],
-        capture_output=capture, text=True,
-    )
-
-
-def _tf_output(name: str):
-    result = _tf("output", "-raw", name, capture=True)
-    if result.returncode == 0 and result.stdout.strip():
-        return result.stdout.strip()
-    return None
+    with ThreadPoolExecutor(max_workers=OCI_PROBE_WORKERS) as pool:
+        reachable = list(pool.map(answers, regions))
+    return [r for r, ok in zip(regions, reachable) if ok]
 
 
-def _terraform_init(attempts: int = 3) -> bool:
-    """`terraform init`, retried on transient failures (provider registry TLS
-    timeouts, CDN blips) with a short backoff."""
-    for i in range(1, attempts + 1):
-        console.print(f"[bold]terraform init[/bold] (attempt {i}/{attempts})...")
-        if _tf("init", "-input=false").returncode == 0:
-            return True
-        if i < attempts:
-            wait = 5 * i
-            console.print(
-                f"[yellow]init failed (often a transient network issue); "
-                f"retrying in {wait}s...[/yellow]"
-            )
-            time.sleep(wait)
-    console.print(
-        "[red]terraform init failed after retries. Check network access to the "
-        "provider registries and retry.[/red]"
-    )
-    return False
+def _compartment_choices(compartments: list[dict], tenancy_ocid: str) -> dict[str, str]:
+    """`Parent/Child` display path -> OCID for every ACTIVE compartment, root first."""
+    # Deleted and deleting compartments come back in the same list and are
+    # pure noise in a picker.
+    active = [c for c in compartments if c.get("lifecycle-state") == "ACTIVE"]
+    by_id = {c["id"]: c for c in active}
+
+    def path(c: dict) -> str:
+        # Leaf names repeat across branches, so a bare name cannot tell the
+        # operator which compartment they just picked.
+        parts = [c["name"]]
+        seen = {c["id"]}
+        parent = c.get("compartment-id")
+        # Stop on the tenancy, on a parent the list never returned, and on a
+        # parent already walked — any of the three otherwise loops forever.
+        while parent and parent != tenancy_ocid and parent in by_id and parent not in seen:
+            seen.add(parent)
+            parts.append(by_id[parent]["name"])
+            parent = by_id[parent].get("compartment-id")
+        return "/".join(reversed(parts))
+
+    paths = sorted((path(c), c["id"]) for c in active)
+    return {TENANCY_ROOT: tenancy_ocid, **dict(paths)}
 
 
-def _render_tfvars() -> bool:
-    template_file = TF_DIR / "terraform.tfvars.j2"
-    if not Template:
-        console.print("[red]jinja2 is not installed; cannot render terraform.tfvars.[/red]")
-        console.print("Run: pip install -r requirements.txt")
-        return False
-    if not template_file.exists():
-        console.print(f"[red]Error:[/red] Template not found: {template_file}")
-        return False
-
-    tfvars_file = TF_DIR / "terraform.tfvars"
-    tfvars_file.write_text(Template(template_file.read_text()).render(
-        profile=env_get("OCI_PROFILE"),
-        tenancy_ocid=env_get("OCI_TENANCY_OCID"),
-        compartment_ocid=env_get("OCI_COMPARTMENT_OCID"),
-        region=env_get("OCI_REGION"),
-        home_region=env_get("OCI_HOME_REGION"),
-        genai_region=env_get("OCI_GENAI_REGION"),
-        genai_compartment_id=env_get("OCI_GENAI_COMPARTMENT_ID"),
-        project_name=env_get("PROJECT_NAME"),
-        adb_admin_password=env_get("ADB_ADMIN_PASSWORD"),
-        oracle_db_password=env_get("ORACLE_DB_PASSWORD"),
-        postgres_db_password=env_get("POSTGRES_DB_PASSWORD"),
-        mongo_db_password=env_get("MONGO_DB_PASSWORD"),
-        ssh_public_key=env_get("SSH_PUBLIC_KEY"),
-        ssh_private_key_path=env_get("SSH_PRIVATE_KEY_PATH"),
-        create_identity_resources=env_get("CREATE_IDENTITY_RESOURCES", "true"),
-    ))
-    tfvars_file.chmod(0o600)
-    console.print(f"[green]Generated:[/green] {tfvars_file}")
-    return True
+def _fuzzy(message: str, choices: dict[str, str], current: str | None = None) -> str:
+    """Fuzzy-filtered pick over a display-name -> value mapping, returning the value."""
+    # On a fuzzy prompt `default` is the initial *search text*, so typing would
+    # append to it instead of starting a new search. The current value is moved
+    # to the top instead, where it opens highlighted: Enter keeps it, and the
+    # first keystroke searches from scratch.
+    names = sorted(choices, key=lambda name: choices[name] != current)
+    picked = inquirer.fuzzy(message=message, choices=names, max_height="70%").execute()
+    return choices[picked]
 
 
-# ============================================================================
-# COMMANDS
-# ============================================================================
-
-@click.group()
-def cli():
-    """Live AI Hub (AI Data Gateway) manager."""
+def _ssh_public_key() -> str:
+    """The first public key on disk, or empty when the operator has none yet."""
+    return next((k.read_text().strip() for k in SSH_KEYS if k.exists()), "")
 
 
-@cli.command()
-def setup():
-    """Configure OCI, write .env, render terraform.tfvars."""
-    console.print("[bold]Live AI Hub (AI Data Gateway) — Setup[/bold]\n")
+def _tf_args(*args: str) -> list[str]:
+    """Terraform invoked against deploy/terraform, never by cd-ing into it."""
+    return ["terraform", f"-chdir={TF_DIR}", *args]
 
-    if not _print_tools():
-        sys.exit(1)
 
-    profiles, oci_config_parser = _read_oci_config()
-    profile = _select("OCI profile:", profiles, default=profiles[0] if profiles else None)
+def _tf(*args: str, **kw) -> subprocess.CompletedProcess:
+    return _sh(_tf_args(*args), **kw)
 
-    profile_config = oci_config_parser[profile]
-    tenancy_ocid = profile_config.get("tenancy")
-    if not tenancy_ocid:
-        console.print(f"[red]Error:[/red] No tenancy OCID in profile '{profile}'")
-        sys.exit(1)
 
-    sdk_config = {
-        "user": profile_config.get("user"),
-        "key_file": profile_config.get("key_file"),
-        "fingerprint": profile_config.get("fingerprint"),
-        "tenancy": tenancy_ocid,
-        "region": profile_config.get("region", "us-phoenix-1"),
-    }
+def _tf_outputs() -> dict:
+    r = subprocess.run(_tf_args("output", "-json"), capture_output=True, text=True)
+    outputs = json.loads(r.stdout) if r.returncode == 0 and r.stdout.strip() else {}
+    if not outputs:
+        console.print("[red]No Terraform outputs. Run `./manage.py provision` first.[/red]")
+        raise typer.Exit(1)
+    return {k: v["value"] for k, v in outputs.items()}
 
-    console.print("\nFetching subscribed regions and compartments...")
-    regions = _list_regions(sdk_config)
-    if regions:
-        labels = [f"{r['name']} (home)" if r["is_home"] else r["name"] for r in regions]
-        region = _select("Region:", labels, default=labels[0]).replace(" (home)", "")
-        # IAM writes only land in the home region; identity.tf targets it explicitly.
-        home_region = next(
-            (r["name"] for r in regions if r["is_home"]), region
-        )
-    else:
-        region = _text("Region", default=sdk_config["region"])
-        home_region = _text("Home region (IAM writes go here)", default=region)
-    sdk_config["region"] = region
 
-    compartments = _list_compartments(sdk_config)
-    if compartments:
-        comp_map = {c["name"]: c["id"] for c in compartments}
-        selected = _fuzzy("Compartment (type to search):", list(comp_map))
-        compartment_ocid = comp_map[selected]
-    else:
-        compartment_ocid = _text("Compartment OCID")
-        comp_map = {}
+def _render_tfvars(mapping: dict) -> str:
+    return render_template(TFVARS_TPL.read_text(), mapping)
 
-    console.print("\n[bold]OCI GenAI (used by the Select AI profiles and agents)[/bold]")
-    if regions:
-        default_choice = next(
-            (l for l in labels if l.replace(" (home)", "") == region), labels[0]
-        )
-        genai_region = _select("GenAI region:", labels, default=default_choice).replace(" (home)", "")
-    else:
-        genai_region = _text("GenAI region", default=region)
 
-    if compartments:
-        default_comp = next(
-            (c["name"] for c in compartments if c["id"] == compartment_ocid),
-            compartments[0]["name"],
-        )
-        genai_compartment_id = comp_map[
-            _fuzzy("GenAI compartment (type to search):", list(comp_map), default=default_comp)
-        ]
-    else:
-        genai_compartment_id = _text("GenAI compartment OCID", default=compartment_ocid)
+def _ops_ssh(ops_ip: str, remote: str) -> subprocess.CompletedProcess:
+    return _sh(["ssh", f"opc@{ops_ip}", remote])
 
-    ssh_dir = Path.home() / ".ssh"
-    ssh_keys = (
-        sorted(
-            f.name for f in ssh_dir.iterdir()
-            if f.is_file() and not f.suffix and f.with_suffix(".pub").exists()
-        )
-        if ssh_dir.is_dir() else []
-    )
-    if ssh_keys:
-        ssh_private_key_path = str(ssh_dir / _fuzzy("SSH private key:", ssh_keys))
-    else:
-        ssh_private_key_path = _text("SSH private key path")
 
-    ssh_public_key_path = Path(ssh_private_key_path + ".pub")
-    if ssh_public_key_path.exists():
-        ssh_public_key = ssh_public_key_path.read_text().strip()
-    else:
-        ssh_public_key = _text("SSH public key (paste content)")
+@app.callback()
+def main():
+    """AI Data Gateway PoC CLI."""
 
-    project_name = _text("Project name (used for OCI resource naming):", default="aidatagateway")
 
-    console.print(
-        "\n[bold]Resource principal[/bold]\n"
-        "The gateway authenticates to OCI GenAI and Object Storage as itself, which "
-        "needs a dynamic group and a policy in the tenancy root. Creating them "
-        "requires tenancy-level IAM rights; answer no if you don't have them and an "
-        "administrator will apply the statements instead."
-    )
-    create_identity = click.confirm(
-        "Create the dynamic group and policy?", default=True
-    )
+@app.command()
+def setup(yes: bool = typer.Option(False, "--yes", help="Skip the interactive prompts.")):
+    """Discover profile, regions and compartments, generate .env, render terraform.tfvars."""
+    console.print("[bold]Prerequisites[/bold]")
+    _check_prereqs(PREREQS)
+    _check_versions()
 
-    console.print(Panel(
-        f"Profile:           {profile}\n"
-        f"Region:            {region}\n"
-        f"Home region:       {home_region} (IAM writes)\n"
-        f"Compartment:       {compartment_ocid}\n"
-        f"GenAI region:      {genai_region}\n"
-        f"GenAI compartment: {genai_compartment_id}\n"
-        f"SSH key:           {ssh_private_key_path}\n"
-        f"Project name:      {project_name}\n"
-        f"Identity objects:  {'created by Terraform' if create_identity else 'left to an administrator'}\n"
-        f"DB passwords:      {'reused from .env' if _passwords_exist() else 'generated (adb/oracle/postgres/mongo)'}",
-        title="Configuration summary",
-    ))
-    if not click.confirm("Save this configuration?", default=True):
-        console.print("[yellow]Setup cancelled — nothing written.[/yellow]")
-        sys.exit(0)
+    load_dotenv(ENV_FILE)
+    prior = {k: os.getenv(k) for k in CONFIG_KEYS}
 
-    for key, value in {
+    profiles = _oci_profiles()
+    if not profiles:
+        console.print(f"[red]No profiles in {OCI_CONFIG}. Run `oci setup config` first.[/red]")
+        raise typer.Exit(1)
+    profile = prior["OCI_PROFILE"] or profiles[0]
+    if not yes:
+        profile = _fuzzy("OCI profile", {p: p for p in profiles}, profile)
+
+    tenancy = _oci_tenancy(profile)
+    if not tenancy:
+        console.print(f"[red]Profile {profile} has no tenancy OCID in {OCI_CONFIG}.[/red]")
+        raise typer.Exit(1)
+
+    with console.status("Listing region subscriptions…"):
+        subscribed, home_region = _oci_regions(profile)
+    if not subscribed or not home_region:
+        console.print(f"[red]Could not list region subscriptions for profile {profile}.[/red]")
+        raise typer.Exit(1)
+
+    with console.status(f"Probing {len(subscribed)} regions for {REGION_PROBE[0]}…"):
+        genai_regions = _regions_with_service(subscribed, [*REGION_PROBE, "--compartment-id", tenancy], profile)
+    if not genai_regions:
+        console.print(f"[yellow]{REGION_PROBE[0]} answered in no subscribed region — offering all.[/yellow]")
+        genai_regions = subscribed
+    console.print(f"  home region [cyan]{home_region}[/cyan], "
+                  f"{len(genai_regions)} of {len(subscribed)} regions host {REGION_PROBE[0]}")
+
+    region = prior["REGION"] or home_region
+    if not yes:
+        region = _fuzzy("Region", {r: r for r in subscribed}, region)
+    genai_region = prior["GENAI_REGION"] or (region if region in genai_regions else genai_regions[0])
+    if not yes:
+        genai_region = _fuzzy("GenAI region", {r: r for r in genai_regions}, genai_region)
+
+    with console.status("Listing compartments…"):
+        compartments = _oci_json(
+            ["iam", "compartment", "list", "--compartment-id", tenancy,
+             "--compartment-id-in-subtree", "true", "--all"], profile) or []
+    choices = _compartment_choices(compartments, tenancy)
+    console.print(f"  {len(choices) - 1} active compartments of {len(compartments)} returned")
+    compartment = prior["COMPARTMENT_OCID"] or tenancy
+    if not yes:
+        compartment = _fuzzy("Compartment", choices, compartment)
+    genai_compartment = prior["GENAI_COMPARTMENT_OCID"] or compartment
+    if not yes:
+        genai_compartment = _fuzzy("GenAI compartment", choices, genai_compartment)
+
+    # The gateway authenticates to GenAI and Object Storage as itself, which
+    # needs a dynamic group and a policy in the tenancy root. Creating them
+    # takes tenancy-level IAM rights; without them an administrator applies
+    # the statements `provision` prints instead.
+    create_identity = prior["CREATE_IDENTITY_RESOURCES"] or "true"
+    if not yes:
+        create_identity = "true" if typer.confirm(
+            "Create the dynamic group and policy (needs tenancy IAM rights)?",
+            default=create_identity == "true") else "false"
+
+    values = {
+        "PROJECT_NAME": prior["PROJECT_NAME"] or DEFAULT_PROJECT_NAME,
         "OCI_PROFILE": profile,
-        "OCI_TENANCY_OCID": tenancy_ocid,
-        "OCI_COMPARTMENT_OCID": compartment_ocid,
-        "OCI_REGION": region,
-        "OCI_GENAI_REGION": genai_region,
-        "OCI_GENAI_COMPARTMENT_ID": genai_compartment_id,
-        "PROJECT_NAME": project_name,
-        "OCI_HOME_REGION": home_region,
-        "CREATE_IDENTITY_RESOURCES": "true" if create_identity else "false",
-        # Reuse any password already in .env. Re-running setup against a live
+        "TENANCY_OCID": tenancy,
+        "COMPARTMENT_OCID": compartment,
+        "REGION": region,
+        "HOME_REGION": home_region,
+        "GENAI_REGION": genai_region,
+        "GENAI_COMPARTMENT_OCID": genai_compartment,
+        "SSH_PUBLIC_KEY": prior["SSH_PUBLIC_KEY"] or _ssh_public_key(),
+        "SSH_INGRESS_CIDR": prior["SSH_INGRESS_CIDR"] or "0.0.0.0/0",
+        "CREATE_IDENTITY_RESOURCES": create_identity,
+        # Passwords already in .env are kept: re-running setup against a live
         # deployment must not rotate credentials the running databases hold.
-        "ADB_ADMIN_PASSWORD": env_get("ADB_ADMIN_PASSWORD") or _generate_password(),
-        "ORACLE_DB_PASSWORD": env_get("ORACLE_DB_PASSWORD") or _generate_password(),
-        "POSTGRES_DB_PASSWORD": env_get("POSTGRES_DB_PASSWORD") or _generate_password(),
-        "MONGO_DB_PASSWORD": env_get("MONGO_DB_PASSWORD") or _generate_password(),
-        "SSH_PRIVATE_KEY_PATH": ssh_private_key_path,
-        "SSH_PUBLIC_KEY": ssh_public_key,
-    }.items():
-        env_save(key, value)
-
-    console.print(f"[green]Configuration saved to {ENV_FILE}[/green]")
-    if not _render_tfvars():
-        sys.exit(1)
-
-    console.print("\nNext step: [bold]./manage.py build[/bold]")
+        **{k: prior[k] or _generate_password() for k in PASSWORD_KEYS},
+    }
+    for key in CONFIG_KEYS:
+        set_key(ENV_FILE, key, values[key])
+    TFVARS_FILE.write_text(_render_tfvars(values))
+    TFVARS_FILE.chmod(0o600)
+    console.print(f"[green]✓[/green] wrote {ENV_FILE.name} and {TFVARS_FILE.name}")
+    console.print("Next: [bold]./manage.py build[/bold]")
 
 
-@cli.command()
+@app.command()
 def build():
     """Build the backend jar and the frontend dist."""
-    console.print("[bold]Building backend and frontend...[/bold]\n")
-
-    console.print("Checking tools:")
-    ok = True
-    ok = _check_version("java", ["--version"], "Java", 23) and ok
-    ok = _check_version("node", ["--version"], "Node", 22) and ok
-    ok = _check_version("npm", ["--version"], "npm", 10) and ok
-    if not ok:
-        sys.exit(1)
-
-    for label, cmd, cwd in [
-        ("Backend (Gradle)", "./gradlew build -x test", BACKEND_DIR),
-        ("Frontend (Angular)", "npm install && npm run build", FRONTEND_DIR),
-    ]:
-        console.print(f"\n[bold]{label}[/bold]")
-        if subprocess.run(cmd, cwd=cwd, shell=True).returncode != 0:
-            console.print(f"[red]Error:[/red] {label} failed")
-            sys.exit(1)
-
-    console.print("\n[green]Build complete.[/green]")
-    console.print("\nNext step: [bold]./manage.py provision[/bold]")
+    _check_versions([f for f in VERSION_FLOORS if f[1] != "terraform"])
+    _sh(["./gradlew", "build"], cwd=BACKEND_DIR)
+    _sh(["npm", "install"], cwd=FRONTEND_DIR)
+    _sh(["npm", "run", "build"], cwd=FRONTEND_DIR)
+    console.print(f"[green]✓[/green] {BACKEND_JAR.relative_to(PROJECT_ROOT)} and "
+                  f"{FRONTEND_DIST.relative_to(PROJECT_ROOT)}/")
+    console.print("Next: [bold]./manage.py provision[/bold]")
 
 
-@cli.command()
-@click.option("--yes", is_flag=True, help="Skip the terraform apply approval prompt")
-def provision(yes):
-    """terraform init (with retry) + apply."""
-    console.print("[bold]Provision infrastructure[/bold]\n")
-
-    if not _print_tools(required=("terraform",), need_oci_sdk=False):
-        sys.exit(1)
-
-    if not (TF_DIR / "terraform.tfvars").exists():
+@app.command()
+def provision(yes: bool = typer.Option(False, "--yes", help="Auto-approve the apply.")):
+    """terraform init and apply."""
+    cfg = load_config()
+    if not TFVARS_FILE.exists():
         console.print("[red]terraform.tfvars not found. Run `./manage.py setup` first.[/red]")
-        sys.exit(1)
-
-    missing = []
-    if not BACKEND_JAR.exists():
-        missing.append(f"Backend JAR ({BACKEND_JAR.relative_to(PROJECT_ROOT)})")
-    if not FRONTEND_DIST.exists() or not any(FRONTEND_DIST.iterdir()):
-        missing.append(f"Frontend dist ({FRONTEND_DIST.relative_to(PROJECT_ROOT)}/)")
+        raise typer.Exit(1)
+    missing = [p for p in (BACKEND_JAR, FRONTEND_DIST) if not p.exists()]
     if missing:
-        console.print("[red]Build artifacts missing — Terraform uploads them as artifacts:[/red]")
-        for m in missing:
-            console.print(f"  - {m}")
-        console.print("Run [bold]./manage.py build[/bold] first.")
-        sys.exit(1)
+        for p in missing:
+            console.print(f"[red]missing {p.relative_to(PROJECT_ROOT)}[/red]")
+        console.print("Run `./manage.py build` first.")
+        raise typer.Exit(1)
 
-    if not _terraform_init():
-        sys.exit(1)
+    _tf("init", "-input=false")
+    _tf("apply", *(["-auto-approve"] if yes else []))
 
-    if yes:
-        console.print("\n[bold]terraform apply[/bold] — auto-approved.\n")
-        apply_args = ("apply", "-auto-approve")
-    else:
-        console.print("\n[bold]terraform apply[/bold] — review the plan and confirm at the prompt.\n")
-        apply_args = ("apply",)
-    if _tf(*apply_args).returncode != 0:
-        console.print("[red]terraform apply did not complete.[/red]")
-        sys.exit(1)
+    if cfg["CREATE_IDENTITY_RESOURCES"] != "true":
+        console.print("\n[yellow]Identity objects were not created.[/yellow] Select AI cannot "
+                      "authenticate until a tenancy administrator applies:")
+        for statement in _tf_outputs()["resource_principal_statements"]:
+            console.print(f"  {statement}")
 
-    console.print("\n[green]Infrastructure provisioned.[/green]")
-
-    if env_get("CREATE_IDENTITY_RESOURCES", "true").lower() != "true":
-        console.print(
-            "\n[yellow]Identity objects were not created.[/yellow] Select AI cannot "
-            "authenticate until a tenancy administrator applies these statements:\n"
-        )
-        result = _tf("output", "-raw", "resource_principal_statements", capture=True)
-        console.print(result.stdout.strip() or "  (run: terraform output resource_principal_statements)")
-
-    console.print(
-        "Cloud-init now runs Ansible on each instance and Liquibase from ops; "
-        "this takes several minutes."
-    )
-    console.print("\nNext step: [bold]./manage.py status[/bold]")
+    console.print("\nCloud-init now runs Ansible on each instance and Liquibase from ops; "
+                  "this takes several minutes.")
+    console.print("Next: [bold]./manage.py status[/bold]")
 
 
-@cli.command()
+@app.command()
+def deploy():
+    """Re-run the ops playbook: Liquibase on all four engines, from the ops box."""
+    load_config()
+    ops_ip = _tf_outputs()["ops_public_ip"]
+    if _run(["ssh", f"opc@{ops_ip}", f"test -f {BOOTSTRAP_OK}"]).returncode != 0:
+        console.print(f"[red]ops has not finished its first bootstrap ({BOOTSTRAP_OK} missing).[/red] "
+                      f"Follow it with: ssh opc@{ops_ip} sudo tail -f {BOOTSTRAP_LOG}")
+        raise typer.Exit(1)
+    _ops_ssh(ops_ip, f"sudo ansible-playbook -i {OPS_INVENTORY} -e @{OPS_PARAMS} {OPS_PLAYBOOK}")
+    console.print("[green]✓[/green] database provisioning re-applied")
+
+
+@app.command()
 def status():
-    """Show endpoints, SSH commands, and how to follow bootstrap progress."""
-    if not shutil.which("terraform"):
-        console.print("[red]Error:[/red] terraform not found on PATH.")
-        sys.exit(1)
+    """Print endpoints, the readiness of every database, and where to look when a tier is not up."""
+    load_config()
+    out = _tf_outputs()
+    lb, ops = out["lb_public_ip"], out["ops_public_ip"]
+    console.print(f"Frontend      http://{lb}")
+    console.print(f"Readiness     http://{lb}{READY_PATH}")
+    console.print(f"Ops           ssh opc@{ops}")
+    for tier in ("backend", "frontend", "databases"):
+        console.print(f"{tier:<13} {out[f'{tier}_private_ip']}  (from ops: ssh opc@${tier.upper()})")
 
-    ops_ip = _tf_output("ops_public_ip")
-    lb_ip = _tf_output("lb_public_ip")
-    if not ops_ip:
-        console.print("[red]Error:[/red] Could not read ops_public_ip from terraform output.")
-        console.print("Run [bold]./manage.py provision[/bold] first.")
-        sys.exit(1)
+    try:
+        with urllib.request.urlopen(f"http://{lb}{READY_PATH}", timeout=READY_TIMEOUT) as r:
+            ready = json.load(r)
+        console.print(f"\nBackend readiness: [bold]{ready['overall']}[/bold]")
+        for component, state in ready["components"].items():
+            mark = "[green]✓[/green]" if state == "UP" else "[yellow]·[/yellow]"
+            console.print(f"  {mark} {component:<10} {state}")
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError) as e:
+        console.print(f"\n[yellow]Backend not answering yet[/yellow] ({e}).")
 
-    ssh_key = env_get("SSH_PRIVATE_KEY_PATH", "")
-    ssh_ops = f"ssh -A -i {ssh_key} opc@{ops_ip}" if ssh_key else f"ssh -A opc@{ops_ip}"
-    ssh_add = f"ssh-add {ssh_key}" if ssh_key else "ssh-add"
-
-    console.print(Panel(
-        f"Frontend:     http://{lb_ip or 'N/A'}\n"
-        f"Demo API:     http://{lb_ip or 'N/A'}/api/v1/demo\n"
-        f"Health:       http://{lb_ip or 'N/A'}/api/v1/health\n"
-        f"Ops bastion:  {ops_ip}\n"
-        f"\n"
-        f"SSH to ops (-A forwards your key so ops can jump to the private tiers):\n"
-        f"  {ssh_add}\n"
-        f"  {ssh_ops}\n"
-        f"\n"
-        f"From ops, the private tiers are pre-exported as $BACKEND / $FRONTEND / $DATABASES:\n"
-        f"  ssh opc@$BACKEND      # Spring Boot\n"
-        f"  ssh opc@$FRONTEND     # nginx + Angular\n"
-        f"  ssh opc@$DATABASES        # podman host (Oracle / Postgres / Mongo containers)",
-        title="Deployment",
-    ))
-
-    console.print(
-        "\nCloud-init runs Ansible on each instance automatically.\n"
-        "Follow ops progress:  [cyan]sudo tail -f /var/log/cloud-init-output.log[/cyan]\n"
-        "Bootstrap succeeded when [cyan]/var/lib/aidatagateway/bootstrap.ok[/cyan] exists.\n"
-    )
+    console.print(f"\nA tier is built when {BOOTSTRAP_OK} exists on it; "
+                  f"until then follow {BOOTSTRAP_LOG}.")
 
 
-@cli.command()
-@click.option("--yes", is_flag=True, help="Skip the confirmation prompt")
-def reset(yes):
-    """Re-run database provisioning (Liquibase on all four engines) from ops."""
-    console.print("[bold]Reset database provisioning[/bold]\n")
-
-    if not _print_tools(required=("terraform", "ssh"), need_oci_sdk=False):
-        sys.exit(1)
-
-    ops_ip = _tf_output("ops_public_ip")
-    if not ops_ip:
-        console.print("[red]Error:[/red] Could not read ops_public_ip from terraform output.")
-        console.print("Run [bold]./manage.py provision[/bold] first.")
-        sys.exit(1)
-
-    ssh_key = env_get("SSH_PRIVATE_KEY_PATH", "")
-    console.print(
-        "This re-runs the ops playbook, which re-applies Liquibase against ADB, "
-        "Oracle Free, and Postgres and re-runs the Mongo init script.\n"
-        "Every changeset is guarded (CREATE OR REPLACE / DROP-if-exists), so "
-        "re-applying is a no-op where nothing changed.\n"
-    )
-    if not (yes or click.confirm(f"Re-run database provisioning on ops ({ops_ip})?", default=True)):
-        console.print("[yellow]Reset cancelled.[/yellow]")
-        return
-
-    remote = (
-        'sudo ansible-playbook -i /home/opc/ops.ini '
-        '--extra-vars "@/home/opc/ansible_params.json" '
-        '/home/opc/ansible_ops/server.yaml'
-    )
-    ssh_cmd = ["ssh"]
-    if ssh_key:
-        ssh_cmd += ["-i", ssh_key]
-    ssh_cmd += [f"opc@{ops_ip}", remote]
-
-    if subprocess.run(ssh_cmd).returncode != 0:
-        console.print("\n[red]Reset failed.[/red] Inspect the run on ops:")
-        console.print("  [cyan]tail -n 200 /home/opc/ansible-playbook.log[/cyan]")
-        sys.exit(1)
-
-    console.print("\n[green]Database provisioning re-applied.[/green]")
+@app.command()
+def reset(yes: bool = typer.Option(False, "--yes", help="Skip the confirmation prompt.")):
+    """Re-run deploy against the live infrastructure."""
+    if not yes and not typer.confirm("Re-run Liquibase on all four engines from ops?", default=True):
+        raise typer.Exit(0)
+    deploy()
 
 
-@cli.command()
-@click.option("--yes", is_flag=True, help="Skip confirmation prompts")
-@click.option("--local-only", is_flag=True, help="Skip terraform destroy; only remove local artifacts")
-@click.option("--purge", is_flag=True, help="Also delete .env and terraform.tfvars (next deploy needs a full setup)")
-def clean(yes, local_only, purge):
-    """Destroy cloud resources and remove local artifacts.
-
-    Keeps .env and terraform.tfvars by default, so `provision` can rebuild the
-    same deployment without re-answering `setup`. Use --purge to drop those too.
-    """
-    console.print("[bold]Clean up[/bold]\n")
-
-    if local_only:
-        console.print("[dim]--local-only: leaving cloud resources alone.[/dim]")
-    elif (TF_DIR / "terraform.tfstate").exists():
-        console.print("[yellow]Terraform state found — cloud resources may exist.[/yellow]")
-        if yes or click.confirm("Run `terraform destroy`?", default=True):
-            if not shutil.which("terraform"):
-                console.print("[red]terraform not found on PATH.[/red]")
-                sys.exit(1)
-            if _tf("destroy", "-auto-approve").returncode != 0:
-                console.print("[red]terraform destroy failed.[/red]")
-                if not (yes or click.confirm("Continue with local cleanup anyway?", default=False)):
-                    return
-            else:
-                console.print("[green]Cloud resources destroyed.[/green]")
+@app.command()
+def teardown(
+    yes: bool = typer.Option(False, "--yes", help="Auto-approve the destroy."),
+    purge: bool = typer.Option(False, "--purge", help="Also delete .env and terraform.tfvars."),
+):
+    """terraform destroy and remove local build output. Keeps .env and terraform.tfvars unless --purge."""
+    if (TF_DIR / "terraform.tfstate").exists():
+        _tf("destroy", *(["-auto-approve"] if yes else []))
     else:
-        console.print("[dim]No Terraform state — skipping cloud cleanup.[/dim]")
+        console.print("[dim]No Terraform state — nothing to destroy.[/dim]")
 
-    scope = "build output, Terraform state" + (", .env and tfvars" if purge else "")
-    if not (yes or click.confirm(f"Delete local artifacts ({scope})?", default=True)):
-        console.print("[yellow]Local cleanup cancelled.[/yellow]")
-        return
-
-    files = [
-        TF_DIR / "terraform.tfstate",
-        TF_DIR / "terraform.tfstate.backup",
-        TF_DIR / "tfplan",
-    ]
+    files = [TF_DIR / "terraform.tfstate", TF_DIR / "terraform.tfstate.backup", TF_DIR / "tfplan"]
     dirs = [
-        TF_DIR / "generated",
-        TF_DIR / ".terraform",
-        BACKEND_DIR / "build",
-        BACKEND_DIR / ".gradle",
-        FRONTEND_DIST,
-        FRONTEND_DIR / ".angular",
-        FRONTEND_DIR / "node_modules",
+        TF_DIR / "generated", TF_DIR / ".terraform",
+        BACKEND_DIR / "build", BACKEND_DIR / ".gradle",
+        FRONTEND_DIR / "dist", FRONTEND_DIR / ".angular", FRONTEND_DIR / "node_modules",
     ]
     if purge:
-        files += [ENV_FILE, TF_DIR / "terraform.tfvars"]
-
-    deleted = []
+        files += [ENV_FILE, TFVARS_FILE]
     for f in files:
         if f.exists():
             f.unlink()
-            deleted.append(str(f.relative_to(PROJECT_ROOT)))
+            console.print(f"  removed {f.relative_to(PROJECT_ROOT)}")
     for d in dirs:
         if d.exists():
             shutil.rmtree(d)
-            deleted.append(str(d.relative_to(PROJECT_ROOT)))
-
-    if deleted:
-        console.print("[green]Deleted:[/green]")
-        for item in deleted:
-            console.print(f"  {item}")
-    else:
-        console.print("Nothing to clean.")
-
-    if purge:
-        console.print("\nNext deploy starts from [bold]./manage.py setup[/bold].")
-    else:
-        console.print(
-            "\n[dim].env and terraform.tfvars kept — rebuild with "
-            "[/dim][bold]./manage.py build && ./manage.py provision[/bold]"
-        )
+            console.print(f"  removed {d.relative_to(PROJECT_ROOT)}/")
+    console.print("Next: [bold]./manage.py setup[/bold]" if purge
+                  else "Next: [bold]./manage.py build && ./manage.py provision[/bold]")
 
 
 if __name__ == "__main__":
-    try:
-        cli()
-    except KeyboardInterrupt:
-        console.print("\n[yellow]Interrupted.[/yellow]")
-        sys.exit(130)
+    app()

@@ -21,8 +21,10 @@ variable "compartment_ocid" {
   type = string
 }
 
-variable "ssh_private_key_path" {
-  type = string
+variable "ssh_ingress_cidr" {
+  description = "Source range allowed to reach the ops box on port 22. Narrow this to your own address."
+  type        = string
+  default     = "0.0.0.0/0"
 }
 
 variable "ssh_public_key" {
