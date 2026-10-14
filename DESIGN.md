@@ -129,6 +129,3 @@ behaviour changes.
 - **Local backend development** uses `SPRING_PROFILES_ACTIVE=local` and
   `src/backend/src/main/resources/application-local.yaml`, which carries
   placeholder credentials to point at local containers and a wallet path.
-- **Gradle provisions its own JDK.** The toolchain targets Java 25 and the
-  Foojay resolver in [`settings.gradle`](src/backend/settings.gradle) downloads
-  it when the local JDK differs, so `build` only needs a JDK that runs Gradle.

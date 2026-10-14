@@ -67,12 +67,10 @@ PREREQS = {
     "node": "brew install node",
     "npm": "brew install node",
 }
-# Command, display name, minimum major version. Gradle runs on the local JDK
-# and provisions the Java 25 toolchain itself, so the floor is what Gradle
-# needs, not what the jar targets.
+# Command, display name, minimum major version.
 VERSION_FLOORS = [
     (["terraform", "version"], "terraform", 1),
-    (["java", "--version"], "java", 17),
+    (["java", "--version"], "java", 25),
     (["node", "--version"], "node", 24),
     (["npm", "--version"], "npm", 11),
 ]

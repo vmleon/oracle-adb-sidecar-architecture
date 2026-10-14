@@ -20,7 +20,7 @@ database engines.
 | OCI tenancy + compartment | —       | See "Tenancy permissions" below                            |
 | OCI CLI                   | current | `oci setup config` complete (`~/.oci/config`)              |
 | Terraform                 | ≥ 1.7   | `oracle/oci` provider (pulled automatically)               |
-| Java                      | 17+     | Runs Gradle, which provisions the Java 25 toolchain itself |
+| Java                      | 25      | Builds the backend jar                                     |
 | Node / npm                | 24 / 11 | Builds the Angular dist                                    |
 | Python                    | 3.11+   | Runs the CLI                                               |
 | SSH keypair               | —       | `~/.ssh/id_ed25519.pub` or `~/.ssh/id_rsa.pub`             |
