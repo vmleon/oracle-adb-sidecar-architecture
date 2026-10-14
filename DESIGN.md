@@ -22,8 +22,8 @@ and agent surfaces.
 
 | Tier                            | Component                                 | Subnet                 | Notes                                                       |
 | ------------------------------- | ----------------------------------------- | ---------------------- | ----------------------------------------------------------- |
-| Frontend                        | Angular 21 served by nginx                | private (app)          | Reverse-proxies `/api/*` to the backend                     |
-| Backend                         | Spring Boot 3.5 / Java 23                 | private (app)          | Holds 4 datasource beans (3 JDBC + Mongo)                   |
+| Frontend                        | Angular 22 served by nginx                | private (app)          | Reverse-proxies `/api/*` to the backend                     |
+| Backend                         | Spring Boot 4.1 / Java 25                 | private (app)          | Holds 4 datasource beans (3 JDBC + Mongo)                   |
 | Production workload (simulated) | Podman containers on one compute (4 OCPU) | private (db)           | Oracle Database Free 26ai, PostgreSQL 18, MongoDB 8         |
 | AI Data Gateway                 | Autonomous AI Database 26ai (OLTP, ECPU)  | private endpoint, mTLS | Vector, Hybrid Vector Index, Select AI Agent framework      |
 | Ops                             | Bastion compute (1 OCPU)                  | public                 | OCI Bastion service enabled; runs Liquibase for all engines |

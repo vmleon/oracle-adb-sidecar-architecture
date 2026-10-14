@@ -1,4 +1,4 @@
-import { Component } from '@angular/core';
+import { Component, ChangeDetectionStrategy } from '@angular/core';
 import { RouterLink, RouterOutlet } from '@angular/router';
 import { NavComponent } from './nav/nav.component';
 import { StatusPillComponent } from './status-pill/status-pill.component';
@@ -23,6 +23,7 @@ import { StatusPillComponent } from './status-pill/status-pill.component';
       Created by <a href="https://www.linkedin.com/in/victormartindeveloper/" target="_blank" rel="noopener">Victor Martin</a> at Oracle Database EMEA Platform Technology Solutions (2026)
     </footer>
   `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   styles: `
     :host { display: flex; flex-direction: column; min-height: 100vh; }
     header {

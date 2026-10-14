@@ -27,7 +27,7 @@ class AgentsServiceTest {
     void setUp() {
         jdbc = mock(JdbcTemplate.class);
         when(jdbc.getDataSource()).thenReturn(mock(DataSource.class));
-        service = new AgentsService(jdbc, "BANKING_INVESTIGATION_TEAM", false, false);
+        service = new AgentsService(jdbc, "BANKING_INVESTIGATION_TEAM", false);
     }
 
     @Test

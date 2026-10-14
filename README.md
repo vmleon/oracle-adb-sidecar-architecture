@@ -90,8 +90,8 @@ flowchart TB
     end
 
     subgraph appnet [App subnet 10.0.2.0/24]
-        frontend["Frontend · nginx + Angular 21<br/>/risk · /fraud · /app · /ai-data-gateway · /agents · /measurements"]
-        backend[Backend<br/>Spring Boot 3.5 / Java 23]
+        frontend["Frontend · nginx + Angular 22<br/>/risk · /fraud · /app · /ai-data-gateway · /agents · /measurements"]
+        backend[Backend<br/>Spring Boot 4.1 / Java 25]
     end
 
     subgraph dbnet [DB subnet 10.0.3.0/24 · production workload · simulated]
@@ -137,8 +137,8 @@ deploy/
     backend/appstack/     JDK 23 + jar + systemd
     databases/dbstack/    Oracle Free 26ai, PostgreSQL 18, MongoDB 8 containers
 src/
-  backend/                Java 23 / Gradle / Spring Boot 3.5
-  frontend/               Angular 21
+  backend/                Java 25 / Gradle / Spring Boot 4.1
+  frontend/               Angular 22
 database/
   liquibase/{adb,oracle,postgres}/   YAML changelogs + liquibase.properties.j2
   mongo/init.js                       mongosh schema seed

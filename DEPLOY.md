@@ -19,8 +19,8 @@ against all four database engines.
 | OCI tenancy + compartment | —       | See "Tenancy permissions" below                    |
 | OCI CLI                   | current | `oci setup config` complete (`~/.oci/config`)      |
 | Terraform                 | ≥ 1.5   | `oracle/oci` provider (pulled automatically)       |
-| Java                      | 23      | Temurin or Oracle JDK — builds the Spring Boot jar |
-| Node / npm                | 22 / 10 | Builds the Angular dist                            |
+| Java                      | 25      | Temurin or Oracle JDK — builds the Spring Boot jar |
+| Node / npm                | 24 / 11 | Builds the Angular dist                            |
 | Python                    | 3.10+   | `pip install -r requirements.txt`                  |
 | SSH keypair               | RSA     | e.g. `~/.ssh/id_rsa` + `id_rsa.pub`                |
 

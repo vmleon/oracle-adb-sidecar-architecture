@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { ReadinessService } from '../readiness.service';
@@ -219,6 +219,7 @@ function countryName(code: string): string {
       </section>
     }
   `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   styles: `
     h2 { font-family: Georgia, serif; margin-bottom: 0.25rem; color: #2C2723; }
     h3 { font-family: Georgia, serif; color: #2C2723; margin: 0 0 0.75rem; font-size: 1.05rem; display: flex; align-items: center; gap: 0.5rem; }

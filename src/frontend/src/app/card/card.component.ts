@@ -1,4 +1,4 @@
-import { Component, computed, input, signal } from '@angular/core';
+import { Component, computed, input, signal, ChangeDetectionStrategy } from '@angular/core';
 import { QueryResponse, Row } from '../query.service';
 
 const COLLAPSED_LIMIT = 7;
@@ -80,6 +80,7 @@ export type CardState =
       }
     </article>
   `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   styles: `
     .card {
       background: #FFFFFF;

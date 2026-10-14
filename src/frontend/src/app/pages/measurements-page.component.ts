@@ -1,4 +1,4 @@
-import { Component, OnInit, signal, computed } from '@angular/core';
+import { Component, OnInit, signal, computed, ChangeDetectionStrategy } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { BaseChartDirective } from 'ng2-charts';
 import type { ChartConfiguration, ChartData } from 'chart.js';
@@ -105,6 +105,7 @@ function iqrTrim(values: number[]): number[] {
               [options]="boxOptions"></canvas>
     </div>
   `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   styles: `
     h2 { font-family: Georgia, serif; margin-bottom: 0.25rem; color: #2C2723; }
     h3 { font-family: Georgia, serif; color: #2C2723; margin-top: 2rem; }

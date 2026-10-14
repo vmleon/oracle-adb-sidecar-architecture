@@ -1,6 +1,6 @@
 plugins {
     id 'java'
-    id 'org.springframework.boot' version '3.5.3'
+    id 'org.springframework.boot' version '4.1.1'
     id 'io.spring.dependency-management' version '1.1.7'
 }
 
@@ -9,7 +9,7 @@ version = '1.0.0'
 
 java {
     toolchain {
-        languageVersion = JavaLanguageVersion.of(23)
+        languageVersion = JavaLanguageVersion.of(25)
     }
 }
 
@@ -18,28 +18,30 @@ repositories {
 }
 
 dependencies {
-    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-webmvc'
     implementation 'org.springframework.boot:spring-boot-starter-jdbc'
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
     implementation 'org.springframework.boot:spring-boot-starter-data-mongodb'
 
-    runtimeOnly 'com.oracle.database.jdbc:ojdbc11:23.9.0.25.07'
+    runtimeOnly 'com.oracle.database.jdbc:ojdbc17:23.26.3.0.0'
     // Pulls oraclepki + osdt_core + osdt_cert transitively — needed so
-    // ojdbc11 can read the SSO wallet (cwallet.sso). Without it we hit
+    // ojdbc17 can read the SSO wallet (cwallet.sso). Without it we hit
     // "NoSuchAlgorithmException: SSO KeyStore not available".
-    implementation 'com.oracle.database.spring:oracle-spring-boot-starter-wallet:26.1.0'
+    implementation 'com.oracle.database.spring:oracle-spring-boot-starter-wallet:26.3.0'
     // UCP for the two Oracle pools (ADB, Oracle Free); Postgres stays on
     // HikariCP via spring-boot-starter-jdbc. We depend on ucp11 directly
     // rather than oracle-spring-boot-starter-ucp because (1) we manually
     // construct PoolDataSource beans in DataSourceConfig so the starter's
-    // auto-config doesn't help, and (2) the starter at 26.1.0 pulled in
-    // ucp 23.7 — older than ojdbc11 23.9 — and the version drift broke
-    // UCP's runtime proxy generation on Java 23 with a "cannot resolve
-    // or generate proxy" IllegalStateException at first getConnection().
-    implementation 'com.oracle.database.jdbc:ucp11:23.9.0.25.07'
+    // auto-config doesn't help, and (2) the starter BOM pins an older ucp
+    // than the ojdbc we ship — and that version drift broke UCP's runtime
+    // proxy generation with a "cannot resolve or generate proxy"
+    // IllegalStateException at first getConnection(). Keep both on the
+    // same release.
+    implementation 'com.oracle.database.jdbc:ucp17:23.26.3.0.0'
     runtimeOnly 'org.postgresql:postgresql'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 

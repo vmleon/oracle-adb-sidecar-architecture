@@ -1,4 +1,4 @@
-import { Component, computed, inject } from '@angular/core';
+import { Component, computed, inject, ChangeDetectionStrategy } from '@angular/core';
 import { ComponentName, ComponentState, ReadinessService } from '../readiness.service';
 
 // Display order: Risk dashboard first (default landing page), then the
@@ -40,6 +40,7 @@ const STATE_LABELS: Record<ComponentState, string> = {
       </div>
     </div>
   `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   styles: `
     .pill {
       position: relative;

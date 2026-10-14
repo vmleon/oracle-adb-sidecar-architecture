@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { BaseChartDirective } from 'ng2-charts';
 import type { ChartConfiguration, ChartData } from 'chart.js';
@@ -168,6 +168,7 @@ import { RiskDashboard, RiskService } from '../risk.service';
       </section>
     }
   `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   styles: `
     h2 { font-family: Georgia, serif; margin-bottom: 0.25rem; color: #2C2723; }
     h3 { font-family: Georgia, serif; color: #2C2723; margin: 0 0 0.75rem; font-size: 1.05rem; }

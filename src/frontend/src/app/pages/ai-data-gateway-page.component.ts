@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import { CardComponent, CardState } from '../card/card.component';
 import { QueryService, Table } from '../query.service';
 import { ReadinessService } from '../readiness.service';
@@ -34,6 +34,7 @@ interface Entry {
       }
     </div>
   `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   styles: `
     h2 { font-family: Georgia, serif; margin-bottom: 0.25rem; color: #2C2723; }
     .subtitle { color: #6B6560; margin-bottom: 1.25rem; font-size: 0.9rem; line-height: 1.4; }
