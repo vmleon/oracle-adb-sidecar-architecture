@@ -1,0 +1,14 @@
+[Unit]
+Description={{ project_name }} backend
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=app
+ExecStart=/usr/bin/java -jar /opt/app/app.jar --spring.config.location=/opt/app/config/application.yaml
+SuccessExitStatus=143
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

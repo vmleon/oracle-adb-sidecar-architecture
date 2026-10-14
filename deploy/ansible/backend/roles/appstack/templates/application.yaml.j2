@@ -14,7 +14,7 @@ server:
   port: 8080
 datasources:
   adb:
-    jdbc-url: jdbc:oracle:thin:@{{ adb_service_name }}_high?TNS_ADMIN=/home/opc/backend/wallet
+    jdbc-url: jdbc:oracle:thin:@{{ adb_service_name }}_high?TNS_ADMIN=/opt/app/wallet
     username: ADMIN
     password: "{{ adb_admin_password }}"
   oracle:
@@ -41,7 +41,7 @@ management:
       enabled: true
 logging:
   file:
-    name: {{ backend_dest_directory }}/logs/app.log
+    name: /opt/app/logs/app.log
   pattern:
     file: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] rid=%X{rid:-–} %logger{36} - %msg%n"
     console: "%d{HH:mm:ss.SSS} %-5level rid=%X{rid:-–} %logger{24} - %msg%n"

@@ -43,3 +43,13 @@ output "rag_bucket_name" {
 output "rag_bucket_namespace" {
   value = oci_objectstorage_bucket.banking_rag_docs.namespace
 }
+
+output "lb_url" {
+  description = "Public entry point for the application."
+  value       = "http://${oci_core_public_ip.public_reserved_ip.ip_address}"
+}
+
+output "ops_ssh" {
+  description = "Command that opens a shell on the ops box."
+  value       = "ssh opc@${module.ops.public_ip}"
+}

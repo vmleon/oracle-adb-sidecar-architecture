@@ -3,7 +3,7 @@
 # oracle-cloud-agent plugin reconciliation (the agent was just upgraded
 # by cloud-init's `dnf upgrade` and its plugins fire their own dnf
 # transactions on their own schedule).
-- name: Install jump-host tools + JDK 23 + SQLcl + postgresql client + ncat + OCI CLI
+- name: Install jump-host tools + Java 25 + SQLcl + postgresql client + ncat + OCI CLI
   ansible.builtin.dnf:
     name:
       - vim
@@ -15,7 +15,7 @@
       - nmap-ncat
       - oci-utils
       - python3-oci-cli
-      - jdk-23
+      - java-25-openjdk-headless
       - sqlcl
       - postgresql
     update_cache: yes
@@ -81,27 +81,27 @@
     state: link
     force: yes
 
-- name: Download Oracle JDBC driver (ojdbc11) into Liquibase lib
+- name: Download Oracle JDBC driver (ojdbc17) into Liquibase lib
   ansible.builtin.get_url:
-    url: https://repo1.maven.org/maven2/com/oracle/database/jdbc/ojdbc11/23.9.0.25.07/ojdbc11-23.9.0.25.07.jar
-    dest: /opt/liquibase/lib/ojdbc11-23.9.0.25.07.jar
+    url: https://repo1.maven.org/maven2/com/oracle/database/jdbc/ojdbc17/23.26.3.0.0/ojdbc17-23.26.3.0.0.jar
+    dest: /opt/liquibase/lib/ojdbc17-23.26.3.0.0.jar
     mode: '0644'
 
 # Oracle PKI — required to open the SSO wallet (cwallet.sso). Without it
-# ojdbc11 throws "NoSuchAlgorithmException: SSO KeyStore not available" on
+# ojdbc17 throws "NoSuchAlgorithmException: SSO KeyStore not available" on
 # any thin-driver connection to ADB via wallet. Modern oraclepki (23.x)
 # is self-contained; the legacy osdt_core / osdt_cert companions are not
 # published past 21.21.0.0 on Maven Central and are no longer needed.
 - name: Download Oracle PKI (oraclepki) into Liquibase lib
   ansible.builtin.get_url:
-    url: https://repo1.maven.org/maven2/com/oracle/database/security/oraclepki/23.9.0.25.07/oraclepki-23.9.0.25.07.jar
-    dest: /opt/liquibase/lib/oraclepki-23.9.0.25.07.jar
+    url: https://repo1.maven.org/maven2/com/oracle/database/security/oraclepki/23.26.3.0.0/oraclepki-23.26.3.0.0.jar
+    dest: /opt/liquibase/lib/oraclepki-23.26.3.0.0.jar
     mode: '0644'
 
 - name: Download PostgreSQL JDBC driver into Liquibase lib
   ansible.builtin.get_url:
-    url: https://repo1.maven.org/maven2/org/postgresql/postgresql/42.7.4/postgresql-42.7.4.jar
-    dest: /opt/liquibase/lib/postgresql-42.7.4.jar
+    url: https://repo1.maven.org/maven2/org/postgresql/postgresql/42.7.14/postgresql-42.7.14.jar
+    dest: /opt/liquibase/lib/postgresql-42.7.14.jar
     mode: '0644'
 
 # --- Saved client connections (run BEFORE Liquibase so failures in the
@@ -127,6 +127,14 @@
     line: '[ -f "$HOME/endpoints.env" ] && . "$HOME/endpoints.env"'
     state: present
   become_user: opc
+
+- name: Render the private IPs of the other tiers for interactive shells
+  ansible.builtin.template:
+    src: endpoints.env.j2
+    dest: /home/opc/endpoints.env
+    owner: opc
+    group: opc
+    mode: '0644'
 
 - name: Create /home/opc/bin for shortcut scripts
   ansible.builtin.file:
@@ -431,7 +439,7 @@
       # Liquibase 4.29 emits the success line on stderr, not stdout.
       changed_when: "'Update has been successful' in (adb_liquibase_result.stdout ~ adb_liquibase_result.stderr)"
 
-- name: Capture Liquibase + mongosh output to /home/opc/ops/liquibase.log
+- name: Capture Liquibase + mongosh output to /home/opc/liquibase.log
   ansible.builtin.copy:
     content: |
       === ORACLE FREE ===
@@ -461,7 +469,7 @@
 
       STDERR:
       {{ adb_liquibase_result.stderr }}
-    dest: /home/opc/ops/liquibase.log
+    dest: /home/opc/liquibase.log
     owner: opc
     group: opc
     mode: '0600'

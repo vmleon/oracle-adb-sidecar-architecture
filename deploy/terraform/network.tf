@@ -62,12 +62,9 @@ resource "oci_core_subnet" "public_subnet" {
   display_name               = "public_subnet_${local.project_name}_${local.deploy_id}"
   dns_label                  = "public"
   prohibit_public_ip_on_vnic = false
-  security_list_ids = [
-    oci_core_virtual_network.vcn.default_security_list_id,
-    oci_core_security_list.public_http_seclist.id
-  ]
-  route_table_id  = oci_core_virtual_network.vcn.default_route_table_id
-  dhcp_options_id = oci_core_virtual_network.vcn.default_dhcp_options_id
+  security_list_ids          = [oci_core_security_list.public_http_seclist.id]
+  route_table_id             = oci_core_virtual_network.vcn.default_route_table_id
+  dhcp_options_id            = oci_core_virtual_network.vcn.default_dhcp_options_id
 }
 
 resource "oci_core_subnet" "app_subnet" {
@@ -109,7 +106,19 @@ resource "oci_core_subnet" "db_subnet" {
 resource "oci_core_security_list" "public_http_seclist" {
   compartment_id = var.compartment_ocid
   vcn_id         = oci_core_virtual_network.vcn.id
-  display_name   = "Public HTTP Security List"
+  display_name   = "Public Security List (ops SSH + load balancer HTTP)"
+
+  # SSH to the ops box. The default source admits the whole internet; narrow
+  # ssh_ingress_cidr to your own address in terraform.tfvars.
+  ingress_security_rules {
+    protocol  = local.tcp
+    source    = var.ssh_ingress_cidr
+    stateless = false
+    tcp_options {
+      min = 22
+      max = 22
+    }
+  }
 
   ingress_security_rules {
     protocol  = local.tcp
@@ -119,6 +128,12 @@ resource "oci_core_security_list" "public_http_seclist" {
       min = 80
       max = 80
     }
+  }
+
+  egress_security_rules {
+    protocol    = "all"
+    destination = local.anywhere
+    stateless   = false
   }
 }
 

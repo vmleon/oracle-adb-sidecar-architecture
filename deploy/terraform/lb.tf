@@ -62,6 +62,11 @@ resource "oci_load_balancer_backend_set" "lb-backend-set-backend" {
     protocol = "HTTP"
     url_path = "/api/v1/health"
   }
+
+  # OCI serialises work requests against a load balancer, so creating this
+  # alongside the frontend backend set with no ordering between them commonly
+  # 409s. depends_on forces the two creates to serialise.
+  depends_on = [oci_load_balancer_backend_set.lb-backend-set-frontend]
 }
 
 resource "oci_load_balancer_listener" "lb-listener" {
@@ -99,6 +104,10 @@ resource "oci_load_balancer_backend" "lb-backend-backend" {
   drain            = false
   offline          = false
   weight           = 1
+
+  # Same work-request serialisation issue as the backend sets above: chain the
+  # two backend creates so they do not race each other.
+  depends_on = [oci_load_balancer_backend.lb-backend-frontend]
 }
 
 resource "oci_load_balancer_load_balancer_routing_policy" "routing_policy" {
