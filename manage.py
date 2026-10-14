@@ -30,6 +30,7 @@ BACKEND_DIR = PROJECT_ROOT / "src" / "backend"
 FRONTEND_DIR = PROJECT_ROOT / "src" / "frontend"
 BACKEND_JAR = BACKEND_DIR / "build" / "libs" / "backend-1.0.0.jar"
 FRONTEND_DIST = FRONTEND_DIR / "dist" / "frontend" / "browser"
+DATABASE_DIR = PROJECT_ROOT / "database"
 OCI_CONFIG = Path.home() / ".oci" / "config"
 SSH_KEYS = [Path.home() / ".ssh" / "id_ed25519.pub", Path.home() / ".ssh" / "id_rsa.pub"]
 
@@ -37,6 +38,7 @@ SSH_KEYS = [Path.home() / ".ssh" / "id_ed25519.pub", Path.home() / ".ssh" / "id_
 OPS_PLAYBOOK = "/home/opc/artifact/server.yaml"
 OPS_INVENTORY = "/home/opc/ops.ini"
 OPS_PARAMS = "/home/opc/ansible_params.json"
+OPS_DATABASE_DIR = "/home/opc/database"
 BOOTSTRAP_OK = "/var/lib/aidatagateway/bootstrap.ok"
 BOOTSTRAP_LOG = "/var/log/aidatagateway-bootstrap.log"
 # The backend's readiness snapshot: one state per database, read by `status`.
@@ -482,12 +484,14 @@ def provision(yes: bool = typer.Option(False, "--yes", help="Auto-approve the ap
 
 @app.command()
 def deploy():
-    """Re-run the ops playbook: Liquibase on all four engines, from the ops box."""
+    """Copy database/ to ops and re-run the ops playbook: Liquibase on all four engines."""
     load_config()
     ops_ip = _tf_outputs()["ops_public_ip"]
+    _sh(["scp", "-q", "-r", f"{DATABASE_DIR}/.", f"opc@{ops_ip}:{OPS_DATABASE_DIR}/"])
     if _run(["ssh", f"opc@{ops_ip}", f"test -f {BOOTSTRAP_OK}"]).returncode != 0:
         console.print(f"[red]ops has not finished its first bootstrap ({BOOTSTRAP_OK} missing).[/red] "
-                      f"Follow it with: ssh opc@{ops_ip} sudo tail -f {BOOTSTRAP_LOG}")
+                      f"It retries every minute with the files just copied; follow it with: "
+                      f"ssh opc@{ops_ip} sudo tail -f {BOOTSTRAP_LOG}")
         raise typer.Exit(1)
     _ops_ssh(ops_ip, f"sudo ansible-playbook -i {OPS_INVENTORY} -e @{OPS_PARAMS} {OPS_PLAYBOOK}")
     console.print("[green]✓[/green] database provisioning re-applied")

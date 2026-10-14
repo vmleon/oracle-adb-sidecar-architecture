@@ -146,6 +146,7 @@ databaseChangeLog:
                     "provider": "oci",
                     "credential_name": "OCI$RESOURCE_PRINCIPAL",
                     "vector_index_name": "BANKING_POLICY_INDEX",
+                    "embedding_model": "cohere.embed-v4.0",
                     "region": "${genai_region}",
                     "oci_compartment_id": "${oci_genai_compartment_id}",
                     "oci_apiformat": "GENERIC"

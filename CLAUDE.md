@@ -31,7 +31,7 @@ section of [DEPLOY.md](DEPLOY.md):
 | `setup`     | check tools, discover the tenancy, generate `.env`, render `terraform.tfvars` |
 | `build`     | compile the backend jar and the frontend dist                             |
 | `provision` | `terraform init` and `apply`; cloud-init then runs every playbook         |
-| `deploy`    | re-run the ops playbook over SSH: Liquibase on all four engines           |
+| `deploy`    | copy `database/` to ops and re-run the ops playbook: Liquibase on all four engines |
 | `status`    | endpoints, the readiness of every database, where to look when a tier is not up |
 | `reset`     | confirm, then `deploy`                                                    |
 | `teardown`  | `terraform destroy` and local build output; keeps `.env` unless `--purge` |

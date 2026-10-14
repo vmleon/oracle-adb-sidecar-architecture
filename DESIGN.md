@@ -56,9 +56,9 @@ playbook returns success under `pipefail`. The compiled jar, the dist, the
 schema bundle and the wallet are module inputs the same script fetches.
 
 **`deploy` re-runs what cloud-init already ran.** The first schema load happens
-on ops during bootstrap; `./manage.py deploy` runs the same playbook over SSH
-when a changeset changes or the first run failed, and `reset` is `deploy` with
-a confirmation. Because every changeset is idempotent, the re-run is a no-op
+on ops during bootstrap; `./manage.py deploy` copies `database/` to ops and
+runs the same playbook over SSH when a changeset changes or the first run
+failed, and `reset` is `deploy` with a confirmation. Because every changeset is idempotent, the re-run is a no-op
 where nothing changed.
 
 **The backend runs as a service account.** The jar lives in `/opt/app`, owned

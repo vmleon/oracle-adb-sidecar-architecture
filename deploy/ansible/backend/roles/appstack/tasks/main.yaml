@@ -48,6 +48,16 @@
     mode: "0640"
     directory_mode: "0750"
 
+# copy applies `mode` to the destination directory too, which leaves it
+# without the execute bit; put it back so the app user can read the wallet.
+- name: Make the wallet directory traversable
+  ansible.builtin.file:
+    path: /opt/app/wallet
+    state: directory
+    owner: app
+    group: app
+    mode: "0750"
+
 - name: Render application.yaml
   ansible.builtin.template:
     src: application.yaml.j2

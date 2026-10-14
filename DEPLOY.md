@@ -143,19 +143,20 @@ Expect: `Apply complete`, followed by the `lb_url` and `ops_ssh` outputs.
 
 ## 5. `deploy`
 
-Re-run the ops playbook over SSH, which re-applies Liquibase against ADB,
-Oracle Free, and PostgreSQL and re-runs the Mongo init script. Cloud-init runs
-this once on its own after `provision`; run it by hand when a changeset
-changed, or when the first run on ops failed. Every changeset is guarded
-(`CREATE OR REPLACE` / DROP-if-exists), so re-applying is a no-op where nothing
-changed.
+Copy [database/](database/) to ops, then re-run the ops playbook over SSH,
+which re-applies Liquibase against ADB, Oracle Free, and PostgreSQL and re-runs
+the Mongo init script. Cloud-init runs this once on its own after `provision`;
+run it by hand when a changeset changed, or when the first run on ops failed.
+Every changeset is guarded (`CREATE OR REPLACE` / DROP-if-exists), so
+re-applying is a no-op where nothing changed.
 
 ```bash
 ./manage.py deploy
 ```
 
 Expect: `database provisioning re-applied`. If ops has not finished its first
-bootstrap yet, `deploy` says so and prints the log to follow.
+bootstrap yet, `deploy` copies the files, says so and prints the log to follow;
+the bootstrap retries every minute and picks the copied files up.
 
 ---
 
