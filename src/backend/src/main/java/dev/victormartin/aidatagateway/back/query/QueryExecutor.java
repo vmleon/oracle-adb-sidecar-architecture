@@ -60,7 +60,7 @@ public class QueryExecutor {
         String engine = engineFor(table, federated);
         long t0 = System.nanoTime();
         try {
-            List<Map<String, Object>> rows = call(table, route);
+            List<Map<String, Object>> rows = callWithGatewayRetry(table, route);
             double elapsed = (System.nanoTime() - t0) / 1_000_000.0;
             log.info("event=db_query table={} route={} engine={} rows={} elapsed_ms={}",
                     table, route, engine, rows.size(), String.format("%.1f", elapsed));
@@ -72,6 +72,31 @@ public class QueryExecutor {
                     abbrev(e.getMessage(), 240));
             return QueryResult.failure(e, elapsed);
         }
+    }
+
+    // The OCI-managed heterogeneous gateway behind PG_LINK drops its
+    // PostgreSQL connection after ~5 min idle; the ADB session that held it
+    // fails its next query with ORA-28511 and reconnects on the one after.
+    // Mirrors AgentsService.runTeamWithGatewayRetry(): one retry.
+    private List<Map<String, Object>> callWithGatewayRetry(String table, String route) {
+        try {
+            return call(table, route);
+        } catch (RuntimeException e) {
+            if (!isGatewayTransient(e)) throw e;
+            log.warn("event=db_query_retry table={} route={} cause=\"{}\"",
+                    table, route, abbrev(e.getMessage(), 240));
+            return call(table, route);
+        }
+    }
+
+    private static boolean isGatewayTransient(Throwable t) {
+        Throwable cur = t;
+        for (int depth = 0; cur != null && depth < 10; depth++, cur = cur.getCause()) {
+            String m = cur.getMessage();
+            if (m == null) continue;
+            if (m.contains("ORA-28511") || m.contains("ORA-28509") || m.contains("ORA-02063")) return true;
+        }
+        return false;
     }
 
     private static String abbrev(String s, int max) {
